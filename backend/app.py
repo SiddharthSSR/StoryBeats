@@ -12,7 +12,24 @@ from config import Config
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+
+# CORS configuration for production
+# Add your production frontend URL after deployment
+ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    # Add your production URL here after deploying frontend:
+    # 'https://your-app.vercel.app',
+]
+
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ALLOWED_ORIGINS if not Config.DEBUG else "*",
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"],
+        "supports_credentials": False
+    }
+})
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'

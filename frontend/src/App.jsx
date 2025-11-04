@@ -3,6 +3,11 @@ import PhotoUpload from './components/PhotoUpload'
 import SongResults from './components/SongResults'
 import './App.css'
 
+// API URL configuration for production deployment
+// In production, VITE_API_URL should be set to your backend URL
+// In development, it uses the Vite proxy (empty string)
+const API_URL = import.meta.env.VITE_API_URL || ''
+
 function App() {
   const [results, setResults] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -22,7 +27,7 @@ function App() {
     formData.append('photo', file)
 
     try {
-      const response = await fetch('/api/analyze', {
+      const response = await fetch(`${API_URL}/api/analyze`, {
         method: 'POST',
         body: formData,
       })
@@ -49,7 +54,7 @@ function App() {
     setError(null)
 
     try {
-      const response = await fetch('/api/more-songs', {
+      const response = await fetch(`${API_URL}/api/more-songs`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
