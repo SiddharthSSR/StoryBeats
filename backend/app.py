@@ -14,12 +14,10 @@ load_dotenv()
 app = Flask(__name__)
 
 # CORS configuration for production
-# Add your production frontend URL after deployment
 ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
-    # Add your production URL here after deploying frontend:
-    # 'https://your-app.vercel.app',
+    'https://story-beats.vercel.app',  # Production frontend
 ]
 
 CORS(app, resources={
