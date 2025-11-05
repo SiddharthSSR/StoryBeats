@@ -195,8 +195,9 @@ def analyze_photo():
             # Create a secure random session ID
             session_id = secrets.token_urlsafe(32)
 
-            # Store session with expiry
+            # Store session with analysis and expiry
             session_songs[session_id] = {
+                'analysis': analysis,  # Store analysis for "more songs" requests
                 'songs': [s['id'] for s in songs],
                 'expires_at': datetime.now() + timedelta(hours=SESSION_EXPIRY_HOURS)
             }
@@ -255,32 +256,54 @@ def get_more_songs():
     Get more song recommendations based on previous analysis
 
     Expected JSON: {
-        'analysis': {...},
-        'offset': 5,
-        'session_id': '...'
+        'session_id': '...'  # Required
+        'analysis': {...},   # Optional (retrieved from session if not provided)
+        'offset': 5,         # Optional (default 5)
     }
     Returns: {
         'songs': [...]
     }
     """
     try:
+        # Input validation
         data = request.json
-        if not data or 'analysis' not in data:
-            return jsonify({'error': 'No analysis data provided'}), 400
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
 
-        analysis = data['analysis']
-        offset = data.get('offset', 5)
         session_id = data.get('session_id')
+        if not session_id:
+            return jsonify({'error': 'session_id is required'}), 400
+
+        # Validate session_id type
+        if not isinstance(session_id, str) or len(session_id) < 10:
+            return jsonify({'error': 'Invalid session_id format'}), 400
+
+        # Check if session exists
+        if session_id not in session_songs:
+            return jsonify({'error': 'Session not found or expired'}), 404
+
+        session_data = session_songs[session_id]
+
+        # Validate session data structure
+        if not isinstance(session_data, dict):
+            return jsonify({'error': 'Invalid session data'}), 500
+
+        # Get analysis from session or request
+        analysis = data.get('analysis')
+        if not analysis:
+            # Try to get from session
+            analysis = session_data.get('analysis')
+            if not analysis:
+                return jsonify({'error': 'No analysis data available'}), 400
+
+        offset = data.get('offset', 5)
+
+        # Validate offset
+        if not isinstance(offset, int) or offset < 0:
+            return jsonify({'error': 'Invalid offset value'}), 400
 
         # Get previously returned songs for this session
-        excluded_ids = []
-        if session_id and session_id in session_songs:
-            session_data = session_songs[session_id]
-            if isinstance(session_data, dict):
-                excluded_ids = session_data.get('songs', [])
-            else:
-                # Handle old format (migration compatibility)
-                excluded_ids = session_data if isinstance(session_data, list) else []
+        excluded_ids = session_data.get('songs', [])
 
         # Get more song recommendations with offset
         songs = spotify_service.get_song_recommendations(analysis, offset=offset, excluded_ids=excluded_ids)

@@ -35,6 +35,157 @@ class SpotifyService:
         token_info = sp_oauth.get_access_token(code)
         return token_info
 
+    def _adjust_tempo_for_mood(self, tempo, mood, energy):
+        """
+        Adjust tempo based on mood to ensure it makes sense
+
+        Returns: Adjusted tempo (BPM)
+        """
+        mood_lower = mood.lower()
+
+        # Define tempo ranges for different moods
+        mood_tempo_ranges = {
+            'energetic': (120, 140),
+            'hype': (125, 145),
+            'excited': (120, 140),
+            'party': (110, 130),
+            'happy': (100, 125),
+            'joyful': (105, 125),
+            'upbeat': (110, 130),
+            'calm': (70, 95),
+            'peaceful': (65, 90),
+            'relaxed': (75, 105),
+            'chill': (80, 110),
+            'mellow': (70, 100),
+            'melancholic': (70, 95),
+            'sad': (65, 90),
+            'emotional': (70, 100),
+            'romantic': (60, 90),
+            'dreamy': (75, 100),
+            'nostalgic': (80, 105),
+            'contemplative': (70, 95),
+            'confident': (100, 120),
+            'adventurous': (110, 130)
+        }
+
+        # Find matching mood range
+        tempo_range = None
+        for mood_key, (min_tempo, max_tempo) in mood_tempo_ranges.items():
+            if mood_key in mood_lower:
+                tempo_range = (min_tempo, max_tempo)
+                break
+
+        # If no specific mood match, use energy to determine range
+        if not tempo_range:
+            if energy >= 0.7:  # High energy
+                tempo_range = (110, 135)
+            elif energy >= 0.4:  # Medium energy
+                tempo_range = (90, 115)
+            else:  # Low energy
+                tempo_range = (70, 95)
+
+        min_tempo, max_tempo = tempo_range
+
+        # Adjust tempo if it's outside the expected range
+        if tempo < min_tempo:
+            adjusted_tempo = min_tempo + 5  # Slightly above minimum
+            print(f"[SpotifyService] Adjusted tempo from {tempo} to {adjusted_tempo} BPM (mood: {mood}, range: {min_tempo}-{max_tempo})")
+            return adjusted_tempo
+        elif tempo > max_tempo:
+            adjusted_tempo = max_tempo - 5  # Slightly below maximum
+            print(f"[SpotifyService] Adjusted tempo from {tempo} to {adjusted_tempo} BPM (mood: {mood}, range: {min_tempo}-{max_tempo})")
+            return adjusted_tempo
+        else:
+            print(f"[SpotifyService] Tempo {tempo} BPM is appropriate for mood: {mood} (range: {min_tempo}-{max_tempo})")
+            return tempo
+
+    def _determine_language_mix(self, image_analysis):
+        """
+        Dynamically determine language/genre mix based on image content
+
+        Returns: (english_count, hindi_count) tuple
+        """
+        mood = image_analysis.get('mood', '').lower()
+        themes = [t.lower() for t in image_analysis.get('themes', [])]
+        keywords = [k.lower() for k in image_analysis.get('keywords', [])]
+        cultural_vibe = image_analysis.get('cultural_vibe', 'global').lower()
+
+        # Start with base mix
+        english_count = 3
+        hindi_count = 2
+
+        # Cultural vibe override (strongest signal)
+        if cultural_vibe == 'indian':
+            english_count = 2
+            hindi_count = 3
+        elif cultural_vibe == 'western':
+            english_count = 4
+            hindi_count = 1
+
+        # Adjust based on themes and keywords
+        all_terms = ' '.join(themes + keywords)
+
+        # Strong Indian indicators → more Hindi
+        indian_indicators = ['temple', 'festival', 'traditional', 'culture', 'heritage', 'indian', 'desi', 'bollywood']
+        indian_score = sum(1 for ind in indian_indicators if ind in all_terms)
+
+        # Strong Western indicators → more English
+        western_indicators = ['urban', 'modern', 'city', 'nightlife', 'club', 'tech', 'metropolitan', 'western']
+        western_score = sum(1 for ind in western_indicators if ind in all_terms)
+
+        # Nature/Travel → balanced mix
+        nature_indicators = ['nature', 'landscape', 'mountain', 'beach', 'ocean', 'forest', 'travel', 'adventure']
+        nature_score = sum(1 for ind in nature_indicators if ind in all_terms)
+
+        # Apply adjustments
+        if indian_score > western_score + 1:
+            hindi_count = min(hindi_count + 1, 4)
+            english_count = max(5 - hindi_count, 1)
+        elif western_score > indian_score + 1:
+            english_count = min(english_count + 1, 4)
+            hindi_count = max(5 - english_count, 1)
+        elif nature_score >= 2:
+            # Balanced mix for nature/travel
+            english_count = 3
+            hindi_count = 2
+
+        print(f"[SpotifyService] Dynamic language mix: {english_count} English, {hindi_count} Hindi")
+        print(f"[SpotifyService] Indicators - Indian: {indian_score}, Western: {western_score}, Nature: {nature_score}")
+
+        return english_count, hindi_count
+
+    def _calculate_semantic_similarity(self, track, image_keywords, image_themes, mood):
+        """
+        Calculate semantic similarity between track metadata and image analysis
+
+        Returns a boost score (0-20) based on keyword/theme matches
+        """
+        similarity_score = 0
+
+        # Combine track name, artist names, album name for matching
+        track_name = track.get('name', '').lower()
+        artist_names = ' '.join([a['name'].lower() for a in track.get('artists', [])])
+        album_name = track.get('album', {}).get('name', '').lower()
+
+        track_text = f"{track_name} {artist_names} {album_name}"
+
+        # Check for keyword matches (each keyword match = +3 points)
+        for keyword in image_keywords:
+            if keyword.lower() in track_text:
+                similarity_score += 3
+
+        # Check for theme matches (each theme match = +5 points)
+        for theme in image_themes:
+            if theme.lower() in track_text:
+                similarity_score += 5
+
+        # Check for mood match in track name (mood match = +4 points)
+        if mood.lower() in track_text:
+            similarity_score += 4
+
+        # Cap at 20 to avoid over-boosting
+        return min(similarity_score, 20)
+
     def get_song_recommendations(self, image_analysis, offset=0, excluded_ids=None):
         """
         Get song recommendations based on image analysis using trending/popular songs
@@ -70,35 +221,32 @@ class SpotifyService:
             print(f"[SpotifyService] Cultural vibe: {cultural_vibe}, Music style: {music_style}")
             print(f"[SpotifyService] Excluding {len(excluded_ids)} previously returned tracks")
 
-            # Determine language mix based on cultural vibe
-            # indian = 3 Hindi/regional + 2 English
-            # western = 4 English + 1 Hindi
-            # global/fusion = 3 English + 2 Hindi
-            if cultural_vibe.lower() == 'indian':
-                hindi_count = 3
-                english_count = 2
-            elif cultural_vibe.lower() == 'western':
-                hindi_count = 1
-                english_count = 4
-            else:  # global or fusion
-                hindi_count = 2
-                english_count = 3
+            # Adjust tempo based on mood to ensure it makes sense
+            tempo = self._adjust_tempo_for_mood(tempo, mood, energy)
 
-            print(f"[SpotifyService] Target mix: {english_count} English, {hindi_count} Hindi/Indian")
+            # Dynamically determine language mix based on image analysis
+            english_count, hindi_count = self._determine_language_mix(image_analysis)
 
+            # Track sources for weighted scoring
+            # Strategy 1 (Playlists) = 0.8x weight - curated but less personalized
+            # Strategy 2 (Recommendations) = 1.0x weight - best match for audio features
+            # Strategy 3 (Search) = 0.6x weight - keyword-based, less precise
             all_tracks = []
 
-            # Strategy 1: Get curated playlists for the mood/genre
-            mood_playlists = self._get_mood_playlists(mood, genres, themes)
+            # Strategy 1: Get contextual playlists for the mood/genre/themes/keywords
+            mood_playlists = self._get_mood_playlists(mood, genres, themes, keywords)
             playlist_tracks = []
 
-            for playlist_id in mood_playlists[:3]:  # Use top 3 playlists
+            for playlist_id in mood_playlists[:4]:  # Use top 4 playlists (curated + contextual)
                 try:
                     playlist = self.sp.playlist_tracks(playlist_id, limit=20, offset=offset)
                     if playlist and 'items' in playlist:
                         for item in playlist['items']:
                             if item['track'] and item['track']['id']:
-                                playlist_tracks.append(item['track'])
+                                track = item['track']
+                                track['_source'] = 'playlist'
+                                track['_source_weight'] = 0.8
+                                playlist_tracks.append(track)
                         print(f"[SpotifyService] Got {len(playlist['items'])} tracks from playlist")
                 except Exception as e:
                     print(f"Playlist fetch error: {e}")
@@ -116,19 +264,53 @@ class SpotifyService:
                         print(f"[SpotifyService] Using seed tracks: {[t['name'] for t in seed_tracks[:3]]}")
                         seed_ids = [t['id'] for t in seed_tracks[:5]]
 
+                        # Use ranges instead of exact targets for more flexible matching
+                        # Range is ±0.2 around target (min 0.0, max 1.0)
+                        energy_min = max(0.0, energy - 0.2)
+                        energy_max = min(1.0, energy + 0.2)
+                        valence_min = max(0.0, valence - 0.2)
+                        valence_max = min(1.0, valence + 0.2)
+                        danceability_min = max(0.0, danceability - 0.2)
+                        danceability_max = min(1.0, danceability + 0.2)
+                        acousticness_min = max(0.0, acousticness - 0.2)
+                        acousticness_max = min(1.0, acousticness + 0.2)
+                        instrumentalness_min = max(0.0, instrumentalness - 0.15)
+                        instrumentalness_max = min(1.0, instrumentalness + 0.15)
+
+                        # Tempo range is ±15 BPM
+                        tempo_min = max(40, tempo - 15)
+                        tempo_max = min(200, tempo + 15)
+
+                        print(f"[SpotifyService] Audio ranges - energy:[{energy_min:.2f}-{energy_max:.2f}], valence:[{valence_min:.2f}-{valence_max:.2f}], tempo:[{tempo_min}-{tempo_max}]")
+
                         rec_results = self.sp.recommendations(
                             seed_tracks=seed_ids,
                             limit=20,
                             target_energy=energy,
+                            min_energy=energy_min,
+                            max_energy=energy_max,
                             target_valence=valence,
+                            min_valence=valence_min,
+                            max_valence=valence_max,
                             target_danceability=danceability,
+                            min_danceability=danceability_min,
+                            max_danceability=danceability_max,
                             target_acousticness=acousticness,
+                            min_acousticness=acousticness_min,
+                            max_acousticness=acousticness_max,
                             target_tempo=tempo,
+                            min_tempo=tempo_min,
+                            max_tempo=tempo_max,
                             target_instrumentalness=instrumentalness,
+                            min_instrumentalness=instrumentalness_min,
+                            max_instrumentalness=instrumentalness_max,
                         )
 
                         if rec_results and 'tracks' in rec_results:
                             print(f"[SpotifyService] Got {len(rec_results['tracks'])} from recommendations")
+                            for track in rec_results['tracks']:
+                                track['_source'] = 'recommendations'
+                                track['_source_weight'] = 1.0  # Highest weight - best audio feature match
                             all_tracks.extend(rec_results['tracks'])
                 except Exception as e:
                     print(f"Recommendations error: {e}")
@@ -148,6 +330,9 @@ class SpotifyService:
                     results = self.sp.search(q=query, type='track', limit=15, offset=search_offset)
                     if results['tracks']['items']:
                         print(f"[SpotifyService] Found {len(results['tracks']['items'])} English tracks for '{query}'")
+                        for track in results['tracks']['items']:
+                            track['_source'] = 'search'
+                            track['_source_weight'] = 0.6  # Lower weight - keyword match only
                         english_tracks.extend(results['tracks']['items'])
                 except Exception as e:
                     print(f"Search error for term '{term}': {e}")
@@ -162,6 +347,9 @@ class SpotifyService:
                     results = self.sp.search(q=query, type='track', limit=15, offset=search_offset, market='IN')
                     if results['tracks']['items']:
                         print(f"[SpotifyService] Found {len(results['tracks']['items'])} Hindi/Indian tracks for '{query}'")
+                        for track in results['tracks']['items']:
+                            track['_source'] = 'search'
+                            track['_source_weight'] = 0.6  # Lower weight - keyword match only
                         hindi_tracks.extend(results['tracks']['items'])
                 except Exception as e:
                     print(f"Search error for Hindi term '{term}': {e}")
@@ -204,14 +392,37 @@ class SpotifyService:
                 artist_count = seen_artists.count(artist_key) if hasattr(seen_artists, 'count') else 0
                 diversity_penalty = artist_count * 5  # Reduce score for repeated artists
 
-                track['_score'] = popularity - diversity_penalty
+                # Apply weighted scoring based on source
+                source_weight = track.get('_source_weight', 0.5)  # Default if no source
+                base_score = popularity * source_weight
+
+                # Calculate semantic similarity boost
+                semantic_boost = self._calculate_semantic_similarity(track, keywords, themes, mood)
+
+                # Apply diversity penalty
+                final_score = base_score + semantic_boost - diversity_penalty
+
+                track['_score'] = final_score
+                track['_base_score'] = base_score
+                track['_semantic_boost'] = semantic_boost
                 track['_artist_key'] = artist_key
                 unique_tracks.append(track)
 
-            # Sort by adjusted score (popularity - diversity penalty)
+            # Sort by final score (source_weight * popularity + semantic_boost - diversity penalty)
             unique_tracks.sort(key=lambda x: x['_score'], reverse=True)
 
+            # Log source distribution and semantic matches
+            source_counts = {}
+            tracks_with_semantic_boost = 0
+            for track in unique_tracks:
+                source = track.get('_source', 'unknown')
+                source_counts[source] = source_counts.get(source, 0) + 1
+                if track.get('_semantic_boost', 0) > 0:
+                    tracks_with_semantic_boost += 1
+
             print(f"[SpotifyService] Total unique quality tracks: {len(unique_tracks)}")
+            print(f"[SpotifyService] Source distribution: {source_counts}")
+            print(f"[SpotifyService] Tracks with semantic matches: {tracks_with_semantic_boost}/{len(unique_tracks)}")
 
             # Separate tracks by language (heuristic: check if track/artist contains Hindi indicators)
             english_pool = []
@@ -231,44 +442,94 @@ class SpotifyService:
                 else:
                     english_pool.append(track)
 
-            print(f"[SpotifyService] Pools - English: {len(english_pool)}, Hindi: {len(hindi_pool)}")
+            # Create popularity buckets for distribution
+            # Target: 1 hidden gem (25-40), 3 moderate (40-70), 1 popular (70-85)
+            hidden_gems = [t for t in unique_tracks if 25 <= t.get('popularity', 0) <= 40]
+            moderate_hits = [t for t in unique_tracks if 40 < t.get('popularity', 0) <= 70]
+            popular_tracks = [t for t in unique_tracks if 70 < t.get('popularity', 0) <= 95]
 
-            # Select songs maintaining the desired mix
+            print(f"[SpotifyService] Popularity distribution - Hidden gems: {len(hidden_gems)}, Moderate: {len(moderate_hits)}, Popular: {len(popular_tracks)}")
+
+            # Separate each bucket by language
+            english_pool = {'hidden': [], 'moderate': [], 'popular': []}
+            hindi_pool = {'hidden': [], 'moderate': [], 'popular': []}
+
+            for bucket_name, bucket_tracks in [('hidden', hidden_gems), ('moderate', moderate_hits), ('popular', popular_tracks)]:
+                for track in bucket_tracks:
+                    # Simple heuristic: check artist/album names for Hindi/Indian indicators
+                    track_text = f"{track['name']} {' '.join([a['name'] for a in track['artists']])} {track['album']['name']}".lower()
+
+                    # Check for Indian/Hindi indicators
+                    is_indian = any(indicator in track_text for indicator in [
+                        'bollywood', 'hindi', 'punjabi', 'desi'
+                    ])
+
+                    if is_indian:
+                        hindi_pool[bucket_name].append(track)
+                    else:
+                        english_pool[bucket_name].append(track)
+
+            print(f"[SpotifyService] English pools - Hidden: {len(english_pool['hidden'])}, Moderate: {len(english_pool['moderate'])}, Popular: {len(english_pool['popular'])}")
+            print(f"[SpotifyService] Hindi pools - Hidden: {len(hindi_pool['hidden'])}, Moderate: {len(hindi_pool['moderate'])}, Popular: {len(hindi_pool['popular'])}")
+
+            # Select songs with popularity distribution
             final_songs = []
             artists_used = {}
 
-            # First, try to get the desired mix
+            # Strategy: For each language quota, select from different popularity buckets
+            # Try to get: 20% hidden, 60% moderate, 20% popular (roughly)
             for pool, target_count, label in [(english_pool, english_count, 'English'), (hindi_pool, hindi_count, 'Hindi')]:
                 selected = 0
-                for track in pool:
-                    if selected >= target_count:
-                        break
 
-                    artist_key = track['_artist_key']
+                # Calculate target distribution for this language
+                # If target_count=3: try 1 moderate, 1 moderate, 1 popular (prioritize moderate)
+                # If target_count=2: try 1 moderate, 1 popular
+                # If target_count=4: try 1 hidden, 2 moderate, 1 popular
+                # If target_count=5: try 1 hidden, 3 moderate, 1 popular
 
-                    # Limit to max 2 songs from the same artist
-                    if artists_used.get(artist_key, 0) >= 2:
-                        continue
+                if target_count >= 4:
+                    bucket_targets = [('hidden', 1), ('moderate', target_count - 2), ('popular', 1)]
+                elif target_count == 3:
+                    bucket_targets = [('moderate', 2), ('popular', 1)]
+                elif target_count == 2:
+                    bucket_targets = [('moderate', 1), ('popular', 1)]
+                else:  # target_count == 1
+                    bucket_targets = [('moderate', 1)]
 
-                    # Skip if already added
-                    if any(s['id'] == track['id'] for s in final_songs):
-                        continue
+                # Select from each bucket
+                for bucket_name, bucket_target in bucket_targets:
+                    bucket_selected = 0
+                    for track in pool[bucket_name]:
+                        if bucket_selected >= bucket_target or selected >= target_count:
+                            break
 
-                    artists_used[artist_key] = artists_used.get(artist_key, 0) + 1
+                        artist_key = track['_artist_key']
 
-                    final_songs.append({
-                        'id': track['id'],
-                        'name': track['name'],
-                        'artist': ', '.join([artist['name'] for artist in track['artists']]),
-                        'album': track['album']['name'],
-                        'preview_url': track.get('preview_url'),
-                        'spotify_url': track['external_urls']['spotify'],
-                        'album_cover': track['album']['images'][0]['url'] if track['album']['images'] else None,
-                        'duration_ms': track['duration_ms'],
-                        'popularity': track.get('popularity', 0),
-                        'language_type': label
-                    })
-                    selected += 1
+                        # Limit to max 2 songs from the same artist
+                        if artists_used.get(artist_key, 0) >= 2:
+                            continue
+
+                        # Skip if already added
+                        if any(s['id'] == track['id'] for s in final_songs):
+                            continue
+
+                        artists_used[artist_key] = artists_used.get(artist_key, 0) + 1
+
+                        final_songs.append({
+                            'id': track['id'],
+                            'name': track['name'],
+                            'artist': ', '.join([artist['name'] for artist in track['artists']]),
+                            'album': track['album']['name'],
+                            'preview_url': track.get('preview_url'),
+                            'spotify_url': track['external_urls']['spotify'],
+                            'album_cover': track['album']['images'][0]['url'] if track['album']['images'] else None,
+                            'duration_ms': track['duration_ms'],
+                            'popularity': track.get('popularity', 0),
+                            'language_type': label,
+                            'popularity_bucket': bucket_name  # Track which bucket this came from
+                        })
+                        selected += 1
+                        bucket_selected += 1
 
                 print(f"[SpotifyService] Selected {selected} {label} songs")
 
@@ -296,6 +557,13 @@ class SpotifyService:
                         'language_type': 'Mixed'
                     })
 
+            # Log final popularity distribution
+            bucket_counts = {}
+            for song in final_songs:
+                bucket = song.get('popularity_bucket', 'unknown')
+                bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
+
+            print(f"[SpotifyService] Final popularity distribution: {bucket_counts}")
             print(f"[SpotifyService] Returning {len(final_songs)} diverse songs with language mix")
             return final_songs
 
@@ -305,35 +573,74 @@ class SpotifyService:
             traceback.print_exc()
             return []
 
-    def _get_mood_playlists(self, mood, genres, themes):
-        """Get curated playlist IDs based on mood"""
-        mood_lower = mood.lower()
+    def _get_mood_playlists(self, mood, genres, themes, keywords=None):
+        """
+        Get contextual playlist IDs based on mood, themes, and keywords
 
-        # Map moods to Spotify's curated playlists
-        playlist_map = {
-            'calm': ['37i9dQZF1DWZd79rJ6a7lp', '37i9dQZF1DX4sWSpwq3LiO', '37i9dQZF1DX3Ogo9pFvBkY'],  # Peaceful Piano, Chill Lofi, Calming Acoustic
+        Uses both curated playlists and contextual search
+        """
+        mood_lower = mood.lower()
+        playlist_ids = []
+
+        # Map moods to Spotify's curated playlists (high quality, verified)
+        curated_map = {
+            'calm': ['37i9dQZF1DWZd79rJ6a7lp', '37i9dQZF1DX4sWSpwq3LiO'],  # Peaceful Piano, Chill Lofi
             'peaceful': ['37i9dQZF1DWZd79rJ6a7lp', '37i9dQZF1DX4sWSpwq3LiO'],
             'relaxed': ['37i9dQZF1DWZd79rJ6a7lp', '37i9dQZF1DX0XUfTFmNBRM'],
-            'happy': ['37i9dQZF1DXdPec7aLTmlC', '37i9dQZF1DX0UrRvztWcAU', '37i9dQZF1DX3rxVfibe1L0'],  # Happy Hits, Feel Good, Mood Booster
-            'energetic': ['37i9dQZF1DX76Wlfdnj7AP', '37i9dQZF1DX0vHZ8elq0UK', '37i9dQZF1DX32NsLKyzScr'],  # Beast Mode, Energy, Power Hour
-            'melancholic': ['37i9dQZF1DX7qK8ma5wgG1', '37i9dQZF1DWX83CujKHHOn', '37i9dQZF1DX3YSRoSdA634'],  # Sad Indie, Sad Songs, Life Sucks
+            'happy': ['37i9dQZF1DXdPec7aLTmlC', '37i9dQZF1DX0UrRvztWcAU'],  # Happy Hits, Feel Good
+            'energetic': ['37i9dQZF1DX76Wlfdnj7AP', '37i9dQZF1DX0vHZ8elq0UK'],  # Beast Mode, Energy
+            'melancholic': ['37i9dQZF1DX7qK8ma5wgG1', '37i9dQZF1DWX83CujKHHOn'],  # Sad Indie, Sad Songs
             'romantic': ['37i9dQZF1DX50KsbC0ZOeI', '37i9dQZF1DX1n9whBbREo9'],  # Love Songs, Romance
         }
 
-        # Try to find matching mood playlist
-        for key, playlists in playlist_map.items():
+        # Start with curated playlists for the mood (1-2 playlists)
+        for key, playlists in curated_map.items():
             if key in mood_lower:
-                return playlists
+                playlist_ids.extend(playlists[:1])  # Take only 1 curated
+                break
 
-        # Fallback: search for playlists with mood term
-        try:
-            results = self.sp.search(q=f"{mood} {genres[0] if genres else ''}", type='playlist', limit=3)
-            if results['playlists']['items']:
-                return [p['id'] for p in results['playlists']['items'][:3]]
-        except:
-            pass
+        # Now search for contextual playlists using themes and keywords
+        search_terms = []
 
-        return ['37i9dQZF1DXcBWIGoYBM5M']  # Today's Top Hits as fallback
+        # Combine keywords and themes to create contextual search terms
+        if keywords:
+            # e.g., "sunset beach chill", "workout motivation", "coffee shop acoustic"
+            for keyword in keywords[:3]:
+                search_terms.append(f"{keyword} {mood}")
+
+        if themes:
+            # e.g., "nature peaceful playlist", "party energy playlist"
+            for theme in themes[:2]:
+                search_terms.append(f"{theme} {mood} playlist")
+
+        # Add genre-based searches
+        if genres:
+            search_terms.append(f"{mood} {genres[0]}")
+
+        # Search for contextual playlists
+        for term in search_terms[:3]:  # Limit to 3 searches
+            try:
+                results = self.sp.search(q=term, type='playlist', limit=2)
+                if results['playlists']['items']:
+                    # Add playlist IDs from search results
+                    for playlist in results['playlists']['items'][:1]:  # Take top 1 from each search
+                        playlist_ids.append(playlist['id'])
+                        print(f"[SpotifyService] Found contextual playlist for '{term}': {playlist['name']}")
+            except Exception as e:
+                print(f"Contextual playlist search error for '{term}': {e}")
+                continue
+
+        # Fallback if no playlists found
+        if not playlist_ids:
+            try:
+                results = self.sp.search(q=f"{mood} {genres[0] if genres else 'indie'}", type='playlist', limit=2)
+                if results['playlists']['items']:
+                    playlist_ids = [p['id'] for p in results['playlists']['items'][:2]]
+            except:
+                playlist_ids = ['37i9dQZF1DXcBWIGoYBM5M']  # Today's Top Hits as last resort
+
+        print(f"[SpotifyService] Using {len(playlist_ids)} playlists (curated + contextual)")
+        return playlist_ids[:4]  # Max 4 playlists to avoid too many API calls
 
     def _get_seed_tracks(self, mood, genres, offset):
         """Get seed tracks for recommendations"""
