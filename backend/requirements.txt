@@ -4,7 +4,7 @@ flask-limiter==3.5.0
 python-dotenv==1.0.0
 spotipy==2.23.0
 pillow==10.4.0
-pillow-heif==0.16.0
+pillow-heif>=0.18.0
 anthropic==0.18.1
 openai==1.12.0
 httpx==0.27.2
