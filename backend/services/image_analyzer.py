@@ -28,9 +28,40 @@ class ImageAnalyzer:
         return self.client
 
     def _encode_image(self, image_path):
-        """Encode image to base64"""
-        with open(image_path, 'rb') as image_file:
-            return base64.b64encode(image_file.read()).decode('utf-8')
+        """
+        Encode image to base64 with optimization
+
+        Resizes large images to max 1024px width to reduce base64 size
+        and speed up LLM processing without losing visual quality for analysis
+        """
+        from PIL import Image
+        import io
+
+        # Open and potentially resize the image
+        img = Image.open(image_path)
+
+        # Max width for encoding (reduces payload size significantly)
+        MAX_WIDTH = 1024
+
+        # Only resize if image is larger than MAX_WIDTH
+        if img.width > MAX_WIDTH:
+            # Calculate new height maintaining aspect ratio
+            ratio = MAX_WIDTH / img.width
+            new_height = int(img.height * ratio)
+            img = img.resize((MAX_WIDTH, new_height), Image.Resampling.LANCZOS)
+            print(f"[ImageAnalyzer] Resized image from {Image.open(image_path).size} to {img.size} for faster processing")
+
+        # Convert to RGB if necessary (handles RGBA, grayscale, etc.)
+        if img.mode not in ('RGB', 'JPEG'):
+            img = img.convert('RGB')
+
+        # Save to bytes buffer with moderate quality (reduces size further)
+        buffer = io.BytesIO()
+        img.save(buffer, format='JPEG', quality=85, optimize=True)
+        buffer.seek(0)
+
+        # Encode to base64
+        return base64.b64encode(buffer.read()).decode('utf-8')
 
     def _get_image_type(self, image_path):
         """Get image MIME type from file extension"""

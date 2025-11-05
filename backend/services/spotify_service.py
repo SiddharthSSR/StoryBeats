@@ -337,19 +337,61 @@ class SpotifyService:
                 except Exception as e:
                     print(f"Search error for term '{term}': {e}")
 
-            # Get Hindi/Indian tracks from trending playlists (filtered by vibe)
-            # This is more reliable than search terms - uses actual audio features
-            trending_hindi = self._get_trending_hindi_tracks(
-                energy, valence, danceability, acousticness, tempo, offset
+            # Get Hindi/Indian tracks - Multi-strategy approach (same as English)
+            # Strategy 1: Hindi playlists (0.8x weight)
+            hindi_playlists = self._get_hindi_mood_playlists(mood, genres, themes, keywords)
+            playlist_hindi_tracks = []
+
+            for playlist_id in hindi_playlists[:4]:  # Use top 4 playlists
+                try:
+                    playlist = self.sp.playlist_tracks(playlist_id, limit=20, offset=offset)
+                    if playlist and 'items' in playlist:
+                        for item in playlist['items']:
+                            if item['track'] and item['track']['id']:
+                                track = item['track']
+                                track['_source'] = 'hindi_playlist'
+                                track['_source_weight'] = 0.8
+                                playlist_hindi_tracks.append(track)
+                        print(f"[SpotifyService] Got {len(playlist['items'])} tracks from Hindi playlist")
+                except Exception as e:
+                    print(f"Hindi playlist fetch error: {e}")
+                    continue
+
+            hindi_tracks.extend(playlist_hindi_tracks)
+
+            # Strategy 2: Hindi Recommendations API (1.0x weight - highest)
+            hindi_recommendations = self._get_hindi_recommendations(
+                mood, genres, energy, valence, danceability, acousticness,
+                tempo, instrumentalness, offset,
+                energy_min, energy_max, valence_min, valence_max,
+                danceability_min, danceability_max, acousticness_min, acousticness_max,
+                tempo_min, tempo_max, instrumentalness_min, instrumentalness_max
             )
 
-            # Add source metadata to trending Hindi tracks
-            for track in trending_hindi:
-                track['_source'] = 'trending_hindi_playlist'
-                track['_source_weight'] = 0.9  # Higher weight - vibe-matched from curated playlists
+            for track in hindi_recommendations:
+                track['_source'] = 'hindi_recommendations'
+                track['_source_weight'] = 1.0  # Highest weight
 
-            hindi_tracks.extend(trending_hindi)
-            print(f"[SpotifyService] Added {len(trending_hindi)} vibe-matched Hindi tracks from trending playlists")
+            hindi_tracks.extend(hindi_recommendations)
+            print(f"[SpotifyService] Added {len(hindi_recommendations)} Hindi tracks from Recommendations API")
+
+            # Strategy 3: Hindi Search API (0.6x weight)
+            hindi_search_terms = self._get_smart_search_terms(mood, genres, themes, keywords, language='hindi')
+
+            for term in hindi_search_terms[:3]:
+                try:
+                    query = f"{term}"
+                    results = self.sp.search(q=query, type='track', limit=15, offset=search_offset, market='IN')
+                    if results['tracks']['items']:
+                        print(f"[SpotifyService] Found {len(results['tracks']['items'])} Hindi tracks for '{query}'")
+                        for track in results['tracks']['items']:
+                            track['_source'] = 'hindi_search'
+                            track['_source_weight'] = 0.6  # Lower weight
+                        hindi_tracks.extend(results['tracks']['items'])
+                except Exception as e:
+                    print(f"Hindi search error for term '{term}': {e}")
+
+            print(f"[SpotifyService] Total Hindi tracks from all strategies: {len(hindi_tracks)}")
 
             # Add both to all_tracks for processing
             all_tracks.extend(english_tracks)
@@ -641,6 +683,68 @@ class SpotifyService:
         print(f"[SpotifyService] Using {len(playlist_ids)} playlists (curated + contextual)")
         return playlist_ids[:4]  # Max 4 playlists to avoid too many API calls
 
+    def _get_hindi_mood_playlists(self, mood, genres, themes, keywords=None):
+        """
+        Get Hindi/Bollywood playlist IDs based on mood, themes, and keywords
+
+        Similar to English playlists but focused on Hindi/Bollywood music
+        """
+        mood_lower = mood.lower()
+        playlist_ids = []
+
+        # Search for Hindi playlists based on mood
+        search_terms = []
+
+        # Mood-based Hindi playlist searches
+        hindi_mood_terms = {
+            'calm': ['peaceful bollywood songs', 'soothing hindi music', 'calm bollywood'],
+            'peaceful': ['peaceful hindi songs', 'relaxing bollywood', 'soft hindi music'],
+            'relaxed': ['chill bollywood', 'relaxed hindi songs', 'easy listening hindi'],
+            'happy': ['happy bollywood songs', 'cheerful hindi music', 'feel good bollywood'],
+            'joyful': ['joyful bollywood', 'uplifting hindi songs', 'happy hindi music'],
+            'energetic': ['energetic bollywood', 'dance bollywood hits', 'party hindi songs'],
+            'confident': ['confident bollywood', 'powerful hindi songs', 'motivational bollywood'],
+            'melancholic': ['sad bollywood songs', 'emotional hindi music', 'heartbreak bollywood'],
+            'nostalgic': ['old bollywood hits', 'retro hindi songs', 'classic bollywood'],
+            'romantic': ['romantic bollywood songs', 'love hindi music', 'romantic hindi'],
+            'adventurous': ['adventurous bollywood', 'upbeat hindi songs', 'energetic bollywood']
+        }
+
+        # Add mood-based search terms
+        for key, terms in hindi_mood_terms.items():
+            if key in mood_lower:
+                search_terms.extend(terms[:2])
+                break
+
+        # Add keyword and theme-based searches
+        if keywords:
+            for keyword in keywords[:2]:
+                search_terms.append(f"{keyword} bollywood {mood}")
+
+        if themes:
+            for theme in themes[:2]:
+                search_terms.append(f"{theme} hindi {mood}")
+
+        # Always add some general Hindi searches
+        search_terms.append('trending bollywood songs')
+        search_terms.append('latest hindi hits')
+
+        # Search for playlists
+        for term in search_terms[:5]:  # Limit to 5 searches
+            try:
+                results = self.sp.search(q=term, type='playlist', limit=2, market='IN')
+                if results['playlists']['items']:
+                    for playlist in results['playlists']['items']:
+                        if playlist and playlist.get('id'):
+                            playlist_ids.append(playlist['id'])
+                            print(f"[SpotifyService] Found Hindi playlist: {playlist.get('name', 'Unknown')} for '{term}'")
+            except Exception as e:
+                print(f"[SpotifyService] Error searching Hindi playlists for '{term}': {e}")
+                continue
+
+        print(f"[SpotifyService] Found {len(playlist_ids)} Hindi playlists for mood '{mood}'")
+        return playlist_ids[:6]  # Return top 6 playlists
+
     def _get_trending_hindi_tracks(self, energy, valence, danceability, acousticness, tempo, offset=0):
         """
         Get trending Hindi songs from popular playlists and filter by audio features
@@ -772,52 +876,192 @@ class SpotifyService:
 
         return []
 
+    def _get_hindi_recommendations(self, mood, genres, energy, valence, danceability,
+                                   acousticness, tempo, instrumentalness, offset,
+                                   energy_min, energy_max, valence_min, valence_max,
+                                   danceability_min, danceability_max, acousticness_min,
+                                   acousticness_max, tempo_min, tempo_max,
+                                   instrumentalness_min, instrumentalness_max):
+        """
+        Get Hindi/Bollywood song recommendations using Spotify Recommendations API
+
+        Uses the same approach as English songs for consistent quality
+        """
+        try:
+            # Get seed tracks for Hindi/Bollywood music
+            seed_tracks = self._get_hindi_seed_tracks(mood, genres, offset)
+
+            if not seed_tracks:
+                print("[SpotifyService] No Hindi seed tracks found")
+                return []
+
+            print(f"[SpotifyService] Using Hindi seed tracks: {[t['name'] for t in seed_tracks[:3]]}")
+            seed_ids = [t['id'] for t in seed_tracks[:5]]
+
+            # Use Spotify Recommendations API with same audio features as English
+            print(f"[SpotifyService] Getting Hindi recommendations with audio ranges")
+            rec_results = self.sp.recommendations(
+                seed_tracks=seed_ids,
+                limit=20,
+                market='IN',  # Focus on Indian market for better Hindi results
+                target_energy=energy,
+                min_energy=energy_min,
+                max_energy=energy_max,
+                target_valence=valence,
+                min_valence=valence_min,
+                max_valence=valence_max,
+                target_danceability=danceability,
+                min_danceability=danceability_min,
+                max_danceability=danceability_max,
+                target_acousticness=acousticness,
+                min_acousticness=acousticness_min,
+                max_acousticness=acousticness_max,
+                target_tempo=tempo,
+                min_tempo=tempo_min,
+                max_tempo=tempo_max,
+                target_instrumentalness=instrumentalness,
+                min_instrumentalness=instrumentalness_min,
+                max_instrumentalness=instrumentalness_max,
+            )
+
+            if rec_results and 'tracks' in rec_results:
+                print(f"[SpotifyService] Got {len(rec_results['tracks'])} Hindi recommendations")
+                return rec_results['tracks']
+
+        except Exception as e:
+            print(f"[SpotifyService] Error getting Hindi recommendations: {e}")
+
+        return []
+
+    def _get_hindi_seed_tracks(self, mood, genres, offset):
+        """
+        Get seed tracks for Hindi/Bollywood recommendations
+
+        Searches for popular Hindi/Bollywood tracks matching the mood
+        """
+        try:
+            # Search for popular Hindi tracks based on mood and genre
+            # Use Bollywood/Hindi-specific search terms
+            hindi_queries = [
+                f"bollywood {mood}",
+                f"hindi {mood}",
+                f"arijit singh {mood}",
+                "pritam bollywood",
+                "ar rahman",
+            ]
+
+            # Pick a search query based on mood/genre
+            if 'romantic' in mood.lower() or 'love' in mood.lower():
+                query = f"romantic bollywood songs"
+            elif 'energetic' in mood.lower() or 'dance' in mood.lower():
+                query = f"bollywood dance hits"
+            elif 'peaceful' in mood.lower() or 'calm' in mood.lower():
+                query = f"soothing hindi songs"
+            elif 'melancholic' in mood.lower() or 'sad' in mood.lower():
+                query = f"sad bollywood songs"
+            else:
+                # Use first hindi query with mood
+                query = hindi_queries[0]
+
+            print(f"[SpotifyService] Searching for Hindi seed tracks with: '{query}'")
+            results = self.sp.search(q=query, type='track', limit=10, offset=offset % 20, market='IN')
+
+            if results and 'tracks' in results and 'items' in results['tracks']:
+                # Filter for popular tracks
+                popular_tracks = [t for t in results['tracks']['items'] if t.get('popularity', 0) > 40]
+                seed_tracks = popular_tracks[:5] if popular_tracks else results['tracks']['items'][:5]
+                print(f"[SpotifyService] Found {len(seed_tracks)} Hindi seed tracks")
+                return seed_tracks
+
+        except Exception as e:
+            print(f"[SpotifyService] Error getting Hindi seed tracks: {e}")
+
+        return []
+
     def _get_smart_search_terms(self, mood, genres, themes, keywords, language='english'):
         """Generate smart search terms avoiding cliches"""
         terms = []
-
-        # Mood-based terms (more specific and current) - English/International
-        mood_terms = {
-            'calm': ['indie folk', 'bedroom pop', 'alt-pop chill', 'atmospheric'],
-            'peaceful': ['ambient pop', 'dream pop', 'soft indie'],
-            'relaxed': ['chill indie', 'lo-fi beats', 'acoustic pop'],
-            'happy': ['indie pop', 'alt-pop upbeat', 'indie dance'],
-            'joyful': ['feel good indie', 'uplifting pop', 'happy vibes'],
-            'energetic': ['indie rock', 'alt-rock', 'electronic pop'],
-            'confident': ['upbeat pop', 'indie anthem', 'empowering'],
-            'melancholic': ['sad indie', 'indie folk emotional', 'alternative'],
-            'nostalgic': ['retro indie', 'throwback', 'nostalgic vibes'],
-            'romantic': ['indie love songs', 'dreamy pop', 'soft rock'],
-            'adventurous': ['indie rock', 'alternative adventure', 'upbeat indie']
-        }
-
         mood_lower = mood.lower()
-        for key, search_terms in mood_terms.items():
-            if key in mood_lower:
-                terms.extend(search_terms)
-                break
 
-        # Add genre if not too generic
-        if genres:
-            for g in genres[:2]:
-                if g.lower() not in ['pop', 'rock', 'bollywood', 'hindi']:  # Skip overly generic and Indian
-                    terms.append(g)
+        if language == 'hindi':
+            # Hindi/Bollywood-specific search terms
+            hindi_mood_terms = {
+                'calm': ['peaceful bollywood', 'soothing hindi', 'calm desi music'],
+                'peaceful': ['soft bollywood', 'relaxing hindi', 'peaceful desi'],
+                'relaxed': ['chill bollywood', 'easy listening hindi', 'relaxed desi'],
+                'happy': ['happy bollywood', 'cheerful hindi', 'upbeat desi'],
+                'joyful': ['joyful bollywood', 'feel good hindi', 'happy desi'],
+                'energetic': ['energetic bollywood', 'dance hindi', 'party desi'],
+                'confident': ['powerful bollywood', 'motivational hindi', 'confident desi'],
+                'melancholic': ['sad bollywood', 'emotional hindi', 'heartbreak desi'],
+                'nostalgic': ['old bollywood', 'retro hindi', 'classic desi'],
+                'romantic': ['romantic bollywood', 'love hindi', 'romantic desi'],
+                'adventurous': ['upbeat bollywood', 'energetic hindi', 'adventurous desi']
+            }
 
-        # Add themes
-        if themes:
-            for theme in themes[:2]:
-                if theme.lower() not in ['general', 'lifestyle', 'moments']:
-                    terms.append(f"{theme} {genres[0] if genres else 'indie'}")
+            for key, search_terms in hindi_mood_terms.items():
+                if key in mood_lower:
+                    terms.extend(search_terms)
+                    break
 
-        # Add keywords from image analysis to make search more specific
-        if keywords:
-            for keyword in keywords[:3]:
-                if keyword.lower() not in ['vibes', 'chill', 'lifestyle', 'moments', 'mood', 'general']:
-                    terms.append(f"{keyword} {mood}")
+            # Add Hindi-specific genre terms
+            if genres:
+                for g in genres[:2]:
+                    if 'bollywood' in g.lower() or 'hindi' in g.lower():
+                        terms.append(f"{g} {mood}")
 
-        # Fallback
-        if not terms:
-            terms = [f"indie {mood}", "alternative", "new music"]
+            # Add keywords with Hindi/Bollywood context
+            if keywords:
+                for keyword in keywords[:3]:
+                    if keyword.lower() not in ['vibes', 'chill', 'lifestyle', 'moments', 'mood', 'general']:
+                        terms.append(f"{keyword} bollywood")
+
+            # Fallback for Hindi
+            if not terms:
+                terms = [f"bollywood {mood}", "latest hindi hits", "trending desi music"]
+
+        else:
+            # English/International search terms
+            mood_terms = {
+                'calm': ['indie folk', 'bedroom pop', 'alt-pop chill', 'atmospheric'],
+                'peaceful': ['ambient pop', 'dream pop', 'soft indie'],
+                'relaxed': ['chill indie', 'lo-fi beats', 'acoustic pop'],
+                'happy': ['indie pop', 'alt-pop upbeat', 'indie dance'],
+                'joyful': ['feel good indie', 'uplifting pop', 'happy vibes'],
+                'energetic': ['indie rock', 'alt-rock', 'electronic pop'],
+                'confident': ['upbeat pop', 'indie anthem', 'empowering'],
+                'melancholic': ['sad indie', 'indie folk emotional', 'alternative'],
+                'nostalgic': ['retro indie', 'throwback', 'nostalgic vibes'],
+                'romantic': ['indie love songs', 'dreamy pop', 'soft rock'],
+                'adventurous': ['indie rock', 'alternative adventure', 'upbeat indie']
+            }
+
+            for key, search_terms in mood_terms.items():
+                if key in mood_lower:
+                    terms.extend(search_terms)
+                    break
+
+            # Add genre if not too generic
+            if genres:
+                for g in genres[:2]:
+                    if g.lower() not in ['pop', 'rock', 'bollywood', 'hindi']:  # Skip overly generic
+                        terms.append(g)
+
+            # Add themes
+            if themes:
+                for theme in themes[:2]:
+                    if theme.lower() not in ['general', 'lifestyle', 'moments']:
+                        terms.append(f"{theme} {genres[0] if genres else 'indie'}")
+
+            # Add keywords from image analysis
+            if keywords:
+                for keyword in keywords[:3]:
+                    if keyword.lower() not in ['vibes', 'chill', 'lifestyle', 'moments', 'mood', 'general']:
+                        terms.append(f"{keyword} {mood}")
+
+            # Fallback for English
+            if not terms:
+                terms = [f"indie {mood}", "alternative", "new music"]
 
         return terms
 
