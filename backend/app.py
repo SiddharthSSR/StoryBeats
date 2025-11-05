@@ -5,6 +5,8 @@ from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
 from PIL import Image
 import os
+import secrets
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 from services.image_analyzer import ImageAnalyzer
@@ -57,12 +59,38 @@ image_analyzer = ImageAnalyzer()
 spotify_service = SpotifyService()
 
 # Track returned songs per session to avoid duplicates
+# Structure: {session_id: {'songs': [song_ids], 'expires_at': datetime}}
 session_songs = {}
+SESSION_EXPIRY_HOURS = 1  # Sessions expire after 1 hour
 
 
 def allowed_file(filename):
     """Check if file extension is allowed"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def cleanup_expired_sessions():
+    """
+    Remove expired sessions to prevent memory leaks
+
+    This function should be called periodically to clean up old sessions.
+    In production, consider using a background task or Redis with TTL.
+    """
+    now = datetime.now()
+    expired_sessions = []
+
+    for session_id, session_data in session_songs.items():
+        if isinstance(session_data, dict) and 'expires_at' in session_data:
+            if session_data['expires_at'] < now:
+                expired_sessions.append(session_id)
+
+    for session_id in expired_sessions:
+        del session_songs[session_id]
+
+    if expired_sessions:
+        print(f"[Cleanup] Removed {len(expired_sessions)} expired sessions")
+
+    return len(expired_sessions)
 
 
 def validate_image(filepath):
@@ -164,10 +192,17 @@ def analyze_photo():
             # Get song recommendations from Spotify
             songs = spotify_service.get_song_recommendations(analysis)
 
-            # Create a session ID based on the analysis (to track this photo's songs)
-            import hashlib
-            session_id = hashlib.md5(str(analysis).encode()).hexdigest()
-            session_songs[session_id] = [s['id'] for s in songs]
+            # Create a secure random session ID
+            session_id = secrets.token_urlsafe(32)
+
+            # Store session with expiry
+            session_songs[session_id] = {
+                'songs': [s['id'] for s in songs],
+                'expires_at': datetime.now() + timedelta(hours=SESSION_EXPIRY_HOURS)
+            }
+
+            # Cleanup expired sessions (run occasionally)
+            cleanup_expired_sessions()
 
             # Clean up uploaded file
             os.remove(filepath)
@@ -238,14 +273,22 @@ def get_more_songs():
         session_id = data.get('session_id')
 
         # Get previously returned songs for this session
-        excluded_ids = session_songs.get(session_id, []) if session_id else []
+        excluded_ids = []
+        if session_id and session_id in session_songs:
+            session_data = session_songs[session_id]
+            if isinstance(session_data, dict):
+                excluded_ids = session_data.get('songs', [])
+            else:
+                # Handle old format (migration compatibility)
+                excluded_ids = session_data if isinstance(session_data, list) else []
 
         # Get more song recommendations with offset
         songs = spotify_service.get_song_recommendations(analysis, offset=offset, excluded_ids=excluded_ids)
 
-        # Track the new songs
-        if session_id:
-            session_songs[session_id].extend([s['id'] for s in songs])
+        # Track the new songs and update expiry
+        if session_id and session_id in session_songs:
+            session_songs[session_id]['songs'].extend([s['id'] for s in songs])
+            session_songs[session_id]['expires_at'] = datetime.now() + timedelta(hours=SESSION_EXPIRY_HOURS)
 
         return jsonify({
             'success': True,
