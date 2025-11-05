@@ -12,13 +12,21 @@ from pillow_heif import register_heif_opener
 
 from services.image_analyzer import ImageAnalyzer
 from services.spotify_service import SpotifyService
-from config import Config
+from config import Config, validate_config
 
 # Register HEIF opener with Pillow to support .heic files
 register_heif_opener()
 
 # Load environment variables
 load_dotenv()
+
+# Validate configuration early to fail fast if critical settings are missing
+try:
+    validate_config()
+except ValueError as config_error:
+    # Surface configuration issues clearly before the server starts
+    print(f"Configuration error: {config_error}")
+    raise
 
 app = Flask(__name__)
 

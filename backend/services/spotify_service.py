@@ -1,3 +1,4 @@
+import os
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth, SpotifyClientCredentials
 from config import Config
@@ -5,6 +6,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from datetime import datetime
 import threading
+
+try:
+    from spotipy.retry import SpotifyRetry
+except ImportError:  # Older spotipy versions expose retries as integers only
+    SpotifyRetry = None
 
 
 class SpotifyService:
@@ -131,7 +137,31 @@ class SpotifyService:
             client_id=Config.SPOTIFY_CLIENT_ID,
             client_secret=Config.SPOTIFY_CLIENT_SECRET
         )
-        self.sp = spotipy.Spotify(client_credentials_manager=self.client_credentials)
+        # Configure Spotify client with sensible timeout and retry defaults
+        timeout_seconds = int(os.getenv('SPOTIFY_REQUEST_TIMEOUT', '15'))
+        retry_attempts = int(os.getenv('SPOTIFY_REQUEST_RETRIES', '3'))
+
+        retry_strategy = None
+        if SpotifyRetry:
+            retry_strategy = SpotifyRetry(
+                total=retry_attempts,
+                backoff_factor=1,
+                status_forcelist=(429, 500, 502, 503, 504)
+            )
+        else:
+            # Fallback: older spotipy versions expect an int for retries
+            retry_strategy = retry_attempts
+
+        self.sp = spotipy.Spotify(
+            client_credentials_manager=self.client_credentials,
+            requests_timeout=timeout_seconds,
+            retries=retry_strategy
+        )
+
+        print(
+            f"[SpotifyService] Initialized Spotify client with timeout={timeout_seconds}s, "
+            f"retries={retry_attempts}"
+        )
 
         # Cache for artist ID lookups (artist_name -> artist_id)
         self.artist_id_cache = {}
