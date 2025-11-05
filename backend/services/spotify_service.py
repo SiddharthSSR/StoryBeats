@@ -337,22 +337,19 @@ class SpotifyService:
                 except Exception as e:
                     print(f"Search error for term '{term}': {e}")
 
-            # Get Hindi/Indian tracks
-            hindi_terms = self._get_indian_search_terms(mood, genres, themes, keywords)
+            # Get Hindi/Indian tracks from trending playlists (filtered by vibe)
+            # This is more reliable than search terms - uses actual audio features
+            trending_hindi = self._get_trending_hindi_tracks(
+                energy, valence, danceability, acousticness, tempo, offset
+            )
 
-            for term in hindi_terms[:3]:
-                try:
-                    # Search for Indian music
-                    query = f"{term}"
-                    results = self.sp.search(q=query, type='track', limit=15, offset=search_offset, market='IN')
-                    if results['tracks']['items']:
-                        print(f"[SpotifyService] Found {len(results['tracks']['items'])} Hindi/Indian tracks for '{query}'")
-                        for track in results['tracks']['items']:
-                            track['_source'] = 'search'
-                            track['_source_weight'] = 0.6  # Lower weight - keyword match only
-                        hindi_tracks.extend(results['tracks']['items'])
-                except Exception as e:
-                    print(f"Search error for Hindi term '{term}': {e}")
+            # Add source metadata to trending Hindi tracks
+            for track in trending_hindi:
+                track['_source'] = 'trending_hindi_playlist'
+                track['_source_weight'] = 0.9  # Higher weight - vibe-matched from curated playlists
+
+            hindi_tracks.extend(trending_hindi)
+            print(f"[SpotifyService] Added {len(trending_hindi)} vibe-matched Hindi tracks from trending playlists")
 
             # Add both to all_tracks for processing
             all_tracks.extend(english_tracks)
@@ -456,15 +453,17 @@ class SpotifyService:
 
             for bucket_name, bucket_tracks in [('hidden', hidden_gems), ('moderate', moderate_hits), ('popular', popular_tracks)]:
                 for track in bucket_tracks:
-                    # Simple heuristic: check artist/album names for Hindi/Indian indicators
-                    track_text = f"{track['name']} {' '.join([a['name'] for a in track['artists']])} {track['album']['name']}".lower()
+                    # Check if track is from trending Hindi playlists (most reliable indicator)
+                    is_from_hindi_playlist = track.get('_source') == 'trending_hindi_playlist'
 
-                    # Check for Indian/Hindi indicators
-                    is_indian = any(indicator in track_text for indicator in [
+                    # Fallback: check artist/album names for Hindi/Indian indicators
+                    track_text = f"{track['name']} {' '.join([a['name'] for a in track['artists']])} {track['album']['name']}".lower()
+                    has_hindi_keywords = any(indicator in track_text for indicator in [
                         'bollywood', 'hindi', 'punjabi', 'desi'
                     ])
 
-                    if is_indian:
+                    # Mark as Hindi if from Hindi playlist OR has Hindi keywords
+                    if is_from_hindi_playlist or has_hindi_keywords:
                         hindi_pool[bucket_name].append(track)
                     else:
                         english_pool[bucket_name].append(track)
@@ -641,6 +640,120 @@ class SpotifyService:
 
         print(f"[SpotifyService] Using {len(playlist_ids)} playlists (curated + contextual)")
         return playlist_ids[:4]  # Max 4 playlists to avoid too many API calls
+
+    def _get_trending_hindi_tracks(self, energy, valence, danceability, acousticness, tempo, offset=0):
+        """
+        Get trending Hindi songs from popular playlists and filter by audio features
+
+        This approach is more reliable than search terms - we pull from curated playlists
+        and let Spotify's audio features do the matching
+        """
+        hindi_tracks = []
+
+        # Search for popular Hindi/Bollywood playlists dynamically
+        print(f"[SpotifyService] Searching for trending Hindi playlists...")
+
+        try:
+            # Search for multiple types of Hindi playlists
+            search_terms = [
+                'bollywood hits',
+                'trending hindi songs',
+                'latest bollywood',
+                'indie hindi',
+                'arijit singh'
+            ]
+
+            playlist_ids = []
+            for term in search_terms[:3]:  # Use top 3 search terms
+                try:
+                    results = self.sp.search(q=term, type='playlist', limit=2, market='IN')
+                    if results and 'playlists' in results and results['playlists']['items']:
+                        for playlist in results['playlists']['items']:
+                            if playlist and playlist.get('id'):
+                                playlist_ids.append(playlist['id'])
+                                print(f"[SpotifyService] Found Hindi playlist: {playlist.get('name', 'Unknown')}")
+                except Exception as e:
+                    print(f"[SpotifyService] Error searching for Hindi playlist with '{term}': {e}")
+                    continue
+
+            if not playlist_ids:
+                print("[SpotifyService] No Hindi playlists found")
+                return []
+
+            # Fetch tracks from found playlists
+            for playlist_id in playlist_ids[:3]:  # Use top 3 playlists
+                try:
+                    playlist = self.sp.playlist_tracks(playlist_id, limit=30, offset=offset % 50)
+                    if playlist and 'items' in playlist:
+                        for item in playlist['items']:
+                            if item['track'] and item['track']['id']:
+                                hindi_tracks.append(item['track'])
+                except Exception as e:
+                    print(f"[SpotifyService] Error fetching tracks from playlist {playlist_id}: {e}")
+                    continue
+
+        except Exception as e:
+            print(f"[SpotifyService] Error in Hindi playlist search: {e}")
+            return []
+
+        if not hindi_tracks:
+            print("[SpotifyService] No Hindi tracks found from playlists")
+            return []
+
+        print(f"[SpotifyService] Found {len(hindi_tracks)} Hindi tracks from playlists")
+
+        # Now get audio features for these tracks to filter by vibe
+        try:
+            track_ids = [t['id'] for t in hindi_tracks[:50]]  # Limit to 50 for API efficiency
+            audio_features_list = self.sp.audio_features(track_ids)
+
+            # Match tracks by audio features (similar to how recommendations API works)
+            matched_tracks = []
+
+            for i, track in enumerate(hindi_tracks[:50]):
+                if i >= len(audio_features_list) or not audio_features_list[i]:
+                    continue
+
+                features = audio_features_list[i]
+
+                # Calculate how well this track matches the desired vibe
+                # Using a scoring system based on feature proximity
+                energy_score = 1.0 - abs(features.get('energy', 0.5) - energy)
+                valence_score = 1.0 - abs(features.get('valence', 0.5) - valence)
+                danceability_score = 1.0 - abs(features.get('danceability', 0.5) - danceability)
+                acousticness_score = 1.0 - abs(features.get('acousticness', 0.5) - acousticness)
+
+                # Tempo matching (normalize to 0-1 scale)
+                track_tempo = features.get('tempo', 120)
+                tempo_diff = abs(track_tempo - tempo)
+                tempo_score = max(0, 1.0 - (tempo_diff / 50))  # 50 BPM tolerance
+
+                # Weighted average (prioritize energy and valence)
+                vibe_match_score = (
+                    energy_score * 0.3 +
+                    valence_score * 0.3 +
+                    danceability_score * 0.15 +
+                    acousticness_score * 0.15 +
+                    tempo_score * 0.1
+                )
+
+                # Only include tracks with good vibe match (>0.6 threshold)
+                if vibe_match_score > 0.6:
+                    track['_vibe_match_score'] = vibe_match_score
+                    track['_audio_features'] = features
+                    matched_tracks.append(track)
+
+            # Sort by vibe match score
+            matched_tracks.sort(key=lambda x: x['_vibe_match_score'], reverse=True)
+
+            print(f"[SpotifyService] Matched {len(matched_tracks)} Hindi tracks by vibe (threshold: 0.6)")
+
+            return matched_tracks
+
+        except Exception as e:
+            print(f"[SpotifyService] Error getting audio features for Hindi tracks: {e}")
+            # Fallback: return tracks without filtering
+            return hindi_tracks[:20]
 
     def _get_seed_tracks(self, mood, genres, offset):
         """Get seed tracks for recommendations"""
