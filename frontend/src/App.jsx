@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import PhotoUpload from './components/PhotoUpload'
 import SongResults from './components/SongResults'
+import logo from './assets/storybeats-logo.png'
 import './App.css'
 
 // API URL configuration for production deployment
@@ -96,8 +97,13 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>StoryBeats</h1>
-        <p className="tagline">Find the perfect song for your Instagram story</p>
+        <div className="header-content">
+          <img src={logo} alt="StoryBeats Logo" className="logo" />
+          <div className="header-text">
+            <h1>StoryBeats</h1>
+            <p className="tagline">Find the perfect song for your Instagram story</p>
+          </div>
+        </div>
       </header>
 
       <main className="main">
