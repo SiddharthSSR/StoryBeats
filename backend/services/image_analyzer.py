@@ -89,6 +89,10 @@ Please provide a detailed analysis in JSON format with the following structure:
     "genres": ["genre1", "genre2", "genre3", "genre4"],
     "energy": 0.0-1.0 (how energetic the vibe is),
     "valence": 0.0-1.0 (how positive/happy the vibe is),
+    "danceability": 0.0-1.0 (how suitable for dancing),
+    "acousticness": 0.0-1.0 (acoustic vs electronic),
+    "tempo": 60-180 (beats per minute - slow to fast),
+    "instrumentalness": 0.0-1.0 (presence of vocals vs instrumental),
     "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
     "music_style": "brief description of what kind of music would fit (e.g., 'soft acoustic with soothing vocals', 'upbeat dance tracks', 'soulful melodies')",
     "cultural_vibe": "indian/western/global/fusion - based on visual elements, clothing, setting, or aesthetic"
@@ -102,6 +106,10 @@ Important guidelines:
 - Consider the setting, colors, activities, expressions, and overall aesthetic
 - Energy: 0.0 = very calm/meditative, 0.3 = relaxed/chill, 0.5 = moderate, 0.7 = lively, 1.0 = very energetic/intense
 - Valence: 0.0 = melancholic/somber, 0.3 = thoughtful/reflective, 0.5 = neutral, 0.7 = positive/cheerful, 1.0 = euphoric/ecstatic
+- Danceability: 0.0 = not danceable (ambient, meditative), 0.3 = gentle sway, 0.5 = moderate movement, 0.7 = groovy/rhythmic, 1.0 = club/party dance
+- Acousticness: 0.0 = fully electronic/synthesized, 0.3 = electronic with organic elements, 0.5 = mixed, 0.7 = mostly acoustic, 1.0 = pure acoustic instruments
+- Tempo: 60-80 = slow/ballad, 80-100 = relaxed/chill, 100-120 = moderate, 120-140 = upbeat, 140-180 = fast/energetic
+- Instrumentalness: 0.0 = vocal-heavy (singing throughout), 0.3 = vocals with instrumental breaks, 0.5 = balanced, 0.7 = mostly instrumental, 1.0 = purely instrumental
 - Keywords should capture the essence, setting, and feeling (e.g., "sunset", "friends", "peaceful", "urban", "traditional")
 - Music style should describe the instrumentation and feel
 - Cultural vibe helps determine language mix in songs (indian = more Hindi/regional, western = more English, global = mixed)
@@ -169,6 +177,10 @@ Please provide a detailed analysis in JSON format with the following structure:
     "genres": ["genre1", "genre2", "genre3", "genre4"],
     "energy": 0.0-1.0 (how energetic the vibe is),
     "valence": 0.0-1.0 (how positive/happy the vibe is),
+    "danceability": 0.0-1.0 (how suitable for dancing),
+    "acousticness": 0.0-1.0 (acoustic vs electronic),
+    "tempo": 60-180 (beats per minute - slow to fast),
+    "instrumentalness": 0.0-1.0 (presence of vocals vs instrumental),
     "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
     "music_style": "brief description of what kind of music would fit (e.g., 'soft acoustic with soothing vocals', 'upbeat dance tracks', 'soulful melodies')",
     "cultural_vibe": "indian/western/global/fusion - based on visual elements, clothing, setting, or aesthetic"
@@ -182,6 +194,10 @@ Important guidelines:
 - Consider the setting, colors, activities, expressions, and overall aesthetic
 - Energy: 0.0 = very calm/meditative, 0.3 = relaxed/chill, 0.5 = moderate, 0.7 = lively, 1.0 = very energetic/intense
 - Valence: 0.0 = melancholic/somber, 0.3 = thoughtful/reflective, 0.5 = neutral, 0.7 = positive/cheerful, 1.0 = euphoric/ecstatic
+- Danceability: 0.0 = not danceable (ambient, meditative), 0.3 = gentle sway, 0.5 = moderate movement, 0.7 = groovy/rhythmic, 1.0 = club/party dance
+- Acousticness: 0.0 = fully electronic/synthesized, 0.3 = electronic with organic elements, 0.5 = mixed, 0.7 = mostly acoustic, 1.0 = pure acoustic instruments
+- Tempo: 60-80 = slow/ballad, 80-100 = relaxed/chill, 100-120 = moderate, 120-140 = upbeat, 140-180 = fast/energetic
+- Instrumentalness: 0.0 = vocal-heavy (singing throughout), 0.3 = vocals with instrumental breaks, 0.5 = balanced, 0.7 = mostly instrumental, 1.0 = purely instrumental
 - Keywords should capture the essence, setting, and feeling (e.g., "sunset", "friends", "peaceful", "urban", "traditional")
 - Music style should describe the instrumentation and feel
 - Cultural vibe helps determine language mix in songs (indian = more Hindi/regional, western = more English, global = mixed)
@@ -255,5 +271,11 @@ Return ONLY the JSON object, no additional text."""
             "genres": ["pop", "indie", "electronic"],
             "energy": 0.6,
             "valence": 0.7,
-            "keywords": ["vibes", "chill", "lifestyle", "moments", "mood"]
+            "danceability": 0.5,
+            "acousticness": 0.4,
+            "tempo": 110,
+            "instrumentalness": 0.2,
+            "keywords": ["vibes", "chill", "lifestyle", "moments", "mood"],
+            "music_style": "upbeat pop with good vibes",
+            "cultural_vibe": "global"
         }

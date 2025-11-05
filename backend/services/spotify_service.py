@@ -53,6 +53,10 @@ class SpotifyService:
             genres = image_analysis.get('genres', ['pop'])
             energy = image_analysis.get('energy', 0.5)
             valence = image_analysis.get('valence', 0.5)
+            danceability = image_analysis.get('danceability', 0.5)
+            acousticness = image_analysis.get('acousticness', 0.5)
+            tempo = image_analysis.get('tempo', 120)
+            instrumentalness = image_analysis.get('instrumentalness', 0.2)
             keywords = image_analysis.get('keywords', [])
             themes = image_analysis.get('themes', [])
 
@@ -60,7 +64,8 @@ class SpotifyService:
             cultural_vibe = image_analysis.get('cultural_vibe', 'global')
             music_style = image_analysis.get('music_style', '')
 
-            print(f"[SpotifyService] Getting recommendations with energy={energy}, valence={valence}, mood={mood}")
+            print(f"[SpotifyService] Getting recommendations with mood={mood}")
+            print(f"[SpotifyService] Audio Features - energy={energy:.2f}, valence={valence:.2f}, danceability={danceability:.2f}, acousticness={acousticness:.2f}, tempo={tempo}, instrumentalness={instrumentalness:.2f}")
             print(f"[SpotifyService] Genres: {genres}, Themes: {themes}, Keywords: {keywords}")
             print(f"[SpotifyService] Cultural vibe: {cultural_vibe}, Music style: {music_style}")
             print(f"[SpotifyService] Excluding {len(excluded_ids)} previously returned tracks")
@@ -116,6 +121,10 @@ class SpotifyService:
                             limit=20,
                             target_energy=energy,
                             target_valence=valence,
+                            target_danceability=danceability,
+                            target_acousticness=acousticness,
+                            target_tempo=tempo,
+                            target_instrumentalness=instrumentalness,
                         )
 
                         if rec_results and 'tracks' in rec_results:
@@ -134,8 +143,8 @@ class SpotifyService:
 
             for term in english_terms[:3]:
                 try:
-                    current_year = 2024
-                    query = f"{term} year:{current_year-1}-{current_year}"
+                    # Removed year restriction to allow more diverse results
+                    query = f"{term}"
                     results = self.sp.search(q=query, type='track', limit=15, offset=search_offset)
                     if results['tracks']['items']:
                         print(f"[SpotifyService] Found {len(results['tracks']['items'])} English tracks for '{query}'")
@@ -166,8 +175,9 @@ class SpotifyService:
             seen_artists = set()
             unique_tracks = []
 
-            # Filter for high-quality tracks
-            MIN_POPULARITY = 40  # Minimum popularity score for quality
+            # Filter for high-quality tracks (lowered to include hidden gems)
+            MIN_POPULARITY = 25  # Minimum popularity score for quality (was 40, lowered for more variety)
+            MAX_POPULARITY = 95  # Maximum popularity to avoid only mainstream hits
 
             for track in all_tracks:
                 if not track or not track.get('id'):
@@ -180,8 +190,8 @@ class SpotifyService:
                 if track_id in seen_ids or track_id in excluded_ids:
                     continue
 
-                # Only include tracks with decent popularity
-                if popularity < MIN_POPULARITY:
+                # Only include tracks with balanced popularity (not too low, not too high)
+                if popularity < MIN_POPULARITY or popularity > MAX_POPULARITY:
                     continue
 
                 seen_ids.add(track_id)
@@ -381,6 +391,12 @@ class SpotifyService:
                 if theme.lower() not in ['general', 'lifestyle', 'moments']:
                     terms.append(f"{theme} {genres[0] if genres else 'indie'}")
 
+        # Add keywords from image analysis to make search more specific
+        if keywords:
+            for keyword in keywords[:3]:
+                if keyword.lower() not in ['vibes', 'chill', 'lifestyle', 'moments', 'mood', 'general']:
+                    terms.append(f"{keyword} {mood}")
+
         # Fallback
         if not terms:
             terms = [f"indie {mood}", "alternative", "new music"]
@@ -426,6 +442,12 @@ class SpotifyService:
             # Add general Bollywood/Hindi as fallback
             terms.append('trending hindi songs')
             terms.append('latest bollywood')
+
+        # Add keywords from image analysis for Indian songs
+        if keywords:
+            for keyword in keywords[:2]:
+                if keyword.lower() not in ['vibes', 'chill', 'lifestyle', 'moments', 'mood', 'general']:
+                    terms.append(f"{keyword} hindi")
 
         # Add specific Indian artists for better results
         terms.append('arijit singh')  # Popular across moods
