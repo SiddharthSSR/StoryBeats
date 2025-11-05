@@ -712,26 +712,42 @@ class SpotifyService:
         """Generate search terms for Hindi/Indian music"""
         terms = []
 
-        # Mood-based terms for Indian music
+        # Mood-based terms for Indian music (refined for better vibe matching)
         mood_terms = {
-            'calm': ['peaceful hindi', 'sufi', 'acoustic hindi', 'indie hindi chill'],
-            'peaceful': ['sufi calm', 'meditation hindi', 'peaceful bollywood'],
-            'relaxed': ['chill hindi', 'indie hindi', 'lo-fi hindi'],
-            'happy': ['upbeat bollywood', 'happy hindi', 'punjabi party'],
-            'joyful': ['celebration hindi', 'happy punjabi', 'desi pop'],
-            'energetic': ['punjabi bhangra', 'high energy hindi', 'party bollywood'],
-            'confident': ['desi hip-hop', 'rap hindi', 'badshah'],
-            'melancholic': ['sad hindi songs', 'emotional bollywood', 'breakup hindi'],
-            'nostalgic': ['90s bollywood', 'retro hindi', 'old hindi songs'],
-            'romantic': ['romantic hindi', 'love songs bollywood', 'sufi romantic'],
-            'adventurous': ['road trip hindi', 'travel hindi', 'upbeat bollywood']
+            'calm': ['peaceful hindi', 'sufi calm', 'acoustic hindi', 'indie hindi chill'],
+            'peaceful': ['sufi', 'meditation hindi', 'peaceful bollywood', 'rahat fateh ali'],
+            'relaxed': ['chill hindi', 'indie hindi', 'lo-fi hindi', 'mellow bollywood'],
+            'happy': ['feel good bollywood', 'upbeat hindi', 'happy indie hindi'],  # Removed party terms
+            'joyful': ['romantic hindi', 'melodious bollywood', 'arijit singh romantic'],  # More melodious, less party
+            'dreamy': ['sufi romantic', 'ethereal hindi', 'romantic ballad hindi', 'mohit chauhan'],  # New: for dreamy moods
+            'energetic': ['punjabi bhangra', 'high energy hindi', 'gym workout hindi'],
+            'confident': ['desi hip-hop', 'rap hindi', 'urban desi', 'hip-hop hindi'],  # More hip-hop focused
+            'melancholic': ['sad hindi songs', 'emotional bollywood', 'heartbreak hindi', 'arijit singh sad'],
+            'nostalgic': ['90s bollywood', 'retro hindi', 'classic hindi songs', 'old is gold hindi'],
+            'romantic': ['romantic hindi', 'love songs bollywood', 'sufi romantic', 'atif aslam'],
+            'adventurous': ['road trip hindi', 'travel playlist hindi', 'uplifting bollywood'],
+            'reflective': ['thoughtful hindi', 'indie hindi acoustic', 'sufi', 'meaningful lyrics hindi'],  # New: for reflective moods
+            'serenity': ['peaceful sufi', 'calm hindi', 'meditation bollywood', 'ambient hindi'],  # New: for serene moods
         }
 
         mood_lower = mood.lower()
+
+        # Try to match mood more flexibly
+        matched = False
         for key, search_terms in mood_terms.items():
             if key in mood_lower:
                 terms.extend(search_terms)
+                matched = True
                 break
+
+        # If no exact match, try partial matching for compound moods
+        if not matched:
+            if any(x in mood_lower for x in ['dream', 'elegant', 'grace']):
+                terms.extend(mood_terms.get('dreamy', []))
+            elif any(x in mood_lower for x in ['reflect', 'contemplate', 'thought']):
+                terms.extend(mood_terms.get('reflective', []))
+            elif any(x in mood_lower for x in ['seren', 'tranquil', 'quiet']):
+                terms.extend(mood_terms.get('serenity', []))
 
         # Check if Indian genres were suggested
         indian_genres = []
@@ -754,14 +770,30 @@ class SpotifyService:
                 if keyword.lower() not in ['vibes', 'chill', 'lifestyle', 'moments', 'mood', 'general']:
                     terms.append(f"{keyword} hindi")
 
-        # Add specific Indian artists for better results
-        terms.append('arijit singh')  # Popular across moods
-        if 'energetic' in mood_lower or 'happy' in mood_lower:
-            terms.append('badshah diljit')
-        elif 'romantic' in mood_lower:
+        # Add mood-appropriate Indian artists (more selective)
+        # Only add artists that match the specific mood
+        if any(x in mood_lower for x in ['romantic', 'love', 'dreamy', 'joyful']):
+            terms.append('arijit singh romantic')
             terms.append('atif aslam')
-        elif 'calm' in mood_lower or 'peaceful' in mood_lower:
-            terms.append('mohit chauhan')
+        elif any(x in mood_lower for x in ['calm', 'peaceful', 'serene', 'reflect']):
+            terms.append('sufi playlist')
+            terms.append('mohit chauhan peaceful')
+        elif any(x in mood_lower for x in ['sad', 'melanchol', 'emotional']):
+            terms.append('arijit singh sad')
+            terms.append('emotional ballad hindi')
+        elif any(x in mood_lower for x in ['energetic', 'party', 'hype']):
+            terms.append('badshah diljit party')
+            terms.append('punjabi workout')
+        elif any(x in mood_lower for x in ['confident', 'swagger', 'boss']):
+            terms.append('desi rap')
+            terms.append('raftaar hip-hop')
+        elif any(x in mood_lower for x in ['nostalgic', 'retro', 'classic']):
+            terms.append('90s evergreen hindi')
+            terms.append('retro bollywood classics')
+        else:
+            # For other moods, use more general but quality terms
+            terms.append('indie hindi')
+            terms.append('bollywood chartbusters')
 
         # Fallback
         if not terms:
