@@ -847,6 +847,35 @@ class SpotifyService:
                 all_songs.append(format_track(track, 'Hindi'))
                 hindi_added += 1
 
+            else:
+                # Target ratio met but need more songs - add from any available pool
+                if english_idx < len(english_pool):
+                    track = english_pool[english_idx]
+                    english_idx += 1
+
+                    artist_name = track.get('_artist_name', 'Unknown')
+                    if artist_counts.get(artist_name, 0) >= self.MAX_TRACKS_PER_ARTIST:
+                        continue
+
+                    artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
+                    all_songs.append(format_track(track, 'English'))
+                    english_added += 1
+
+                elif hindi_idx < len(hindi_pool):
+                    track = hindi_pool[hindi_idx]
+                    hindi_idx += 1
+
+                    artist_name = track.get('_artist_name', 'Unknown')
+                    if artist_counts.get(artist_name, 0) >= self.MAX_TRACKS_PER_ARTIST:
+                        continue
+
+                    artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
+                    all_songs.append(format_track(track, 'Hindi'))
+                    hindi_added += 1
+                else:
+                    # No more tracks available - break to avoid infinite loop
+                    break
+
         # Phase 2: Fill remaining slots (up to max_songs) alternating between languages
         while len(all_songs) < max_songs and (english_idx < len(english_pool) or hindi_idx < len(hindi_pool)):
             # Alternate: add English if we have more Hindi, or vice versa
@@ -886,6 +915,9 @@ class SpotifyService:
                     artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
                     all_songs.append(format_track(track, 'English'))
                     english_added += 1
+                else:
+                    # Both pools exhausted - break to avoid infinite loop
+                    break
 
         return all_songs
 
