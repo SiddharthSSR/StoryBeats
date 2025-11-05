@@ -49,7 +49,7 @@ CORS(app, resources={
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'heif'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'heif', 'mpo'}
 MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -137,7 +137,7 @@ def validate_image(filepath):
             return False, f'Image too small: {width}x{height}. Minimum: {MIN_DIMENSION}x{MIN_DIMENSION}'
 
         # Check format is supported
-        supported_formats = {'PNG', 'JPEG', 'GIF', 'WEBP', 'HEIC', 'HEIF'}
+        supported_formats = {'PNG', 'JPEG', 'GIF', 'WEBP', 'HEIC', 'HEIF', 'MPO'}
         if img.format not in supported_formats:
             return False, f'Unsupported image format: {img.format}. Supported: {", ".join(supported_formats)}'
 
@@ -176,7 +176,7 @@ def analyze_photo():
             return jsonify({'error': 'No file selected'}), 400
 
         if not allowed_file(file.filename):
-            return jsonify({'error': 'Invalid file type. Allowed: png, jpg, jpeg, gif, webp, heic, heif'}), 400
+            return jsonify({'error': 'Invalid file type. Allowed: png, jpg, jpeg, gif, webp, heic, heif, mpo'}), 400
 
         # Save file temporarily
         filename = secure_filename(file.filename)

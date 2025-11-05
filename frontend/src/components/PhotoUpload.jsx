@@ -12,7 +12,7 @@ function PhotoUpload({ onUpload, error }) {
     // Check if it's an image by MIME type OR file extension
     const isImage = file.type.startsWith('image/')
     const fileName = file.name.toLowerCase()
-    const hasImageExtension = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(fileName)
+    const hasImageExtension = /\.(jpg|jpeg|png|gif|webp|heic|heif|mpo)$/i.test(fileName)
 
     if (isImage || hasImageExtension) {
       const reader = new FileReader()
