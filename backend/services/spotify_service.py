@@ -387,8 +387,7 @@ class SpotifyService:
             results = self.sp.artist_albums(
                 artist_id,
                 album_type='album,single',
-                limit=50,
-                market=market
+                limit=50
             )
 
             for album in results['items']:
@@ -514,6 +513,24 @@ class SpotifyService:
         )
 
         return vibe_match_score
+
+    def _estimate_audio_features_from_mood(self, normalized_mood):
+        """
+        Estimate audio features when Spotify API is unavailable
+        Returns approximate features based on mood category
+        """
+        mood_features = {
+            'romantic': {'energy': 0.4, 'valence': 0.6, 'danceability': 0.5, 'acousticness': 0.6, 'tempo': 95},
+            'energetic': {'energy': 0.9, 'valence': 0.8, 'danceability': 0.85, 'acousticness': 0.1, 'tempo': 140},
+            'peaceful': {'energy': 0.3, 'valence': 0.5, 'danceability': 0.3, 'acousticness': 0.7, 'tempo': 85},
+            'melancholic': {'energy': 0.3, 'valence': 0.2, 'danceability': 0.3, 'acousticness': 0.6, 'tempo': 80},
+            'happy': {'energy': 0.7, 'valence': 0.8, 'danceability': 0.7, 'acousticness': 0.3, 'tempo': 120},
+            'confident': {'energy': 0.8, 'valence': 0.7, 'danceability': 0.75, 'acousticness': 0.2, 'tempo': 125},
+            'nostalgic': {'energy': 0.5, 'valence': 0.5, 'danceability': 0.5, 'acousticness': 0.5, 'tempo': 105},
+            'dreamy': {'energy': 0.4, 'valence': 0.6, 'danceability': 0.4, 'acousticness': 0.5, 'tempo': 100},
+            'moody': {'energy': 0.5, 'valence': 0.4, 'danceability': 0.55, 'acousticness': 0.3, 'tempo': 110}
+        }
+        return mood_features.get(normalized_mood, mood_features['happy'])
 
     def get_song_recommendations(self, image_analysis, offset=0, excluded_ids=None):
         """
@@ -659,21 +676,48 @@ class SpotifyService:
 
             print(f"\n[Step 3] Total tracks collected: {len(all_tracks_with_metadata)}")
 
+            # Deduplicate tracks by ID (keep first occurrence)
+            seen_ids = set()
+            unique_tracks = []
+            for track in all_tracks_with_metadata:
+                track_id = track.get('id')
+                if track_id and track_id not in seen_ids:
+                    seen_ids.add(track_id)
+                    unique_tracks.append(track)
+
+            all_tracks_with_metadata = unique_tracks
+            print(f"[Step 3] After deduplication: {len(all_tracks_with_metadata)} unique tracks")
+
             # Step 4: Get audio features and filter by vibe matching
             print(f"\n[Step 4] Filtering by vibe matching (threshold: {self.VIBE_THRESHOLD})...")
 
             track_ids = [t['id'] for t in all_tracks_with_metadata if t.get('id')]
 
-            # Batch get audio features (max 100 at a time)
+            # Batch get audio features (max 50 at a time to avoid URL length issues)
             all_audio_features = []
-            for i in range(0, len(track_ids), 100):
-                batch = track_ids[i:i+100]
+            audio_features_working = True
+
+            for i in range(0, len(track_ids), 50):
+                batch = track_ids[i:i+50]
                 try:
                     features = self.sp.audio_features(batch)
-                    all_audio_features.extend(features)
+                    if features:
+                        all_audio_features.extend(features)
+                    else:
+                        all_audio_features.extend([None] * len(batch))
                 except Exception as e:
-                    print(f"  Error getting audio features batch: {e}")
-                    all_audio_features.extend([None] * len(batch))
+                    print(f"  Error getting audio features batch {i//50 + 1}: {str(e)[:100]}")
+                    audio_features_working = False
+                    # Use estimated features based on artist's mood category
+                    for j, track in enumerate(all_tracks_with_metadata[i:i+50]):
+                        estimated = self._estimate_audio_features_from_mood(normalized_mood)
+                        all_audio_features.append(estimated)
+
+            if not audio_features_working:
+                print(f"  ⚠️  Audio features API unavailable, using estimated features based on mood")
+
+            # Adjust vibe threshold based on whether we're using real or estimated features
+            effective_vibe_threshold = 0.5 if not audio_features_working else self.VIBE_THRESHOLD
 
             # Filter and score tracks
             scored_tracks = []
@@ -690,8 +734,8 @@ class SpotifyService:
                     features, energy, valence, danceability, acousticness, tempo
                 )
 
-                # Filter by strict threshold
-                if vibe_score < self.VIBE_THRESHOLD:
+                # Filter by threshold (adjusted for estimated features)
+                if vibe_score < effective_vibe_threshold:
                     continue
 
                 # Filter by popularity
