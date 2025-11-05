@@ -47,6 +47,11 @@ uploads/
 *.tmp
 temp/
 
+# Exceptions: Allow logo files
+!storybeats-logo.png
+!frontend/src/assets/storybeats-logo.png
+!frontend/public/storybeats-logo.png
+
 # Cache
 .cache
 *.cache
