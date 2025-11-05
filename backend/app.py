@@ -3,6 +3,7 @@ from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
+from PIL import Image
 import os
 from dotenv import load_dotenv
 
@@ -64,6 +65,56 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def validate_image(filepath):
+    """
+    Validate image file content using Pillow
+
+    Checks:
+    1. File is actually a valid image
+    2. Image dimensions are reasonable (prevent decompression bombs)
+    3. Image format is supported
+
+    Returns:
+        tuple: (is_valid, error_message)
+    """
+    try:
+        # Open and verify the image
+        img = Image.open(filepath)
+        img.verify()  # Verify that it's actually an image
+
+        # Reopen after verify (verify() closes the file)
+        img = Image.open(filepath)
+
+        # Check image dimensions to prevent decompression bombs
+        # Maximum safe pixels: ~178 million (e.g., 16384 x 10922)
+        MAX_PIXELS = 178956970
+        width, height = img.size
+        total_pixels = width * height
+
+        if total_pixels > MAX_PIXELS:
+            return False, f'Image too large: {width}x{height} ({total_pixels} pixels). Maximum: {MAX_PIXELS} pixels'
+
+        # Check for reasonable dimensions
+        MAX_DIMENSION = 16384  # 16K resolution
+        if width > MAX_DIMENSION or height > MAX_DIMENSION:
+            return False, f'Image dimensions too large: {width}x{height}. Maximum: {MAX_DIMENSION}x{MAX_DIMENSION}'
+
+        # Minimum dimension check
+        MIN_DIMENSION = 10
+        if width < MIN_DIMENSION or height < MIN_DIMENSION:
+            return False, f'Image too small: {width}x{height}. Minimum: {MIN_DIMENSION}x{MIN_DIMENSION}'
+
+        # Check format is supported
+        supported_formats = {'PNG', 'JPEG', 'GIF', 'WEBP'}
+        if img.format not in supported_formats:
+            return False, f'Unsupported image format: {img.format}. Supported: {", ".join(supported_formats)}'
+
+        return True, None
+
+    except Exception as e:
+        return False, f'Invalid image file: {str(e)}'
+
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -101,6 +152,12 @@ def analyze_photo():
         file.save(filepath)
 
         try:
+            # Validate image content (prevent malicious files)
+            is_valid, error_msg = validate_image(filepath)
+            if not is_valid:
+                os.remove(filepath)  # Clean up invalid file
+                return jsonify({'error': error_msg}), 400
+
             # Analyze image with LLM
             analysis = image_analyzer.analyze_image(filepath)
 
