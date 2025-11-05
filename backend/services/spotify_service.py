@@ -1,6 +1,10 @@
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth, SpotifyClientCredentials
 from config import Config
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
+from datetime import datetime
+import threading
 
 
 class SpotifyService:
@@ -131,6 +135,15 @@ class SpotifyService:
 
         # Cache for artist ID lookups (artist_name -> artist_id)
         self.artist_id_cache = {}
+
+        # Performance caches with timestamps
+        self.top_tracks_cache = {}  # {artist_id: (tracks, timestamp)}
+        self.albums_cache = {}  # {artist_id: (album_ids, timestamp)}
+        self.cache_lock = threading.Lock()  # Thread-safe cache access
+
+        # Cache expiration times (in seconds)
+        self.TOP_TRACKS_CACHE_TTL = 3600  # 1 hour
+        self.ALBUMS_CACHE_TTL = 1800  # 30 minutes
 
     def get_auth_url(self):
         """Get Spotify OAuth authorization URL"""
@@ -655,6 +668,107 @@ class SpotifyService:
 
         return features
 
+    def _get_cached_top_tracks(self, artist_id, country):
+        """
+        Get artist top tracks with caching (1 hour TTL)
+        Thread-safe with cache lock
+        """
+        cache_key = f"{artist_id}_{country}"
+
+        # Check cache
+        with self.cache_lock:
+            if cache_key in self.top_tracks_cache:
+                tracks, timestamp = self.top_tracks_cache[cache_key]
+                # Check if cache is still valid
+                if (datetime.now() - timestamp).total_seconds() < self.TOP_TRACKS_CACHE_TTL:
+                    return tracks
+
+        # Cache miss or expired - fetch from API
+        try:
+            response = self.sp.artist_top_tracks(artist_id, country=country)
+            tracks = response.get('tracks', [])
+
+            # Store in cache
+            with self.cache_lock:
+                self.top_tracks_cache[cache_key] = (tracks, datetime.now())
+
+            return tracks
+        except Exception as e:
+            print(f"    Error getting top tracks: {e}")
+            return []
+
+    def _get_cached_recent_albums(self, artist_id):
+        """
+        Get artist recent albums with caching (30 min TTL)
+        Thread-safe with cache lock
+        """
+        # Check cache
+        with self.cache_lock:
+            if artist_id in self.albums_cache:
+                album_ids, timestamp = self.albums_cache[artist_id]
+                # Check if cache is still valid
+                if (datetime.now() - timestamp).total_seconds() < self.ALBUMS_CACHE_TTL:
+                    return album_ids
+
+        # Cache miss or expired - fetch from API
+        album_ids = self._get_artist_recent_albums(artist_id)
+
+        # Store in cache
+        with self.cache_lock:
+            self.albums_cache[artist_id] = (album_ids, datetime.now())
+
+        return album_ids
+
+    def _process_single_artist(self, artist_name, language, market, normalized_mood):
+        """
+        Process a single artist and return tracks (for parallel execution)
+
+        Args:
+            artist_name: Artist name
+            language: 'english' or 'hindi'
+            market: 'US' or 'IN'
+            normalized_mood: Mood category
+
+        Returns:
+            list: Tracks from this artist with metadata
+        """
+        artist_id = self._search_artist_by_name(artist_name, market=market)
+        if not artist_id:
+            return []
+
+        tracks = []
+
+        # Get top tracks (40%) - cached
+        top_tracks = self._get_cached_top_tracks(artist_id, market)
+        for track in top_tracks[:self.TRACKS_PER_ARTIST_TOP]:
+            if track and track.get('id'):
+                track['_track_type'] = 'top'
+                track['_artist_name'] = artist_name
+                track['_language'] = language
+                tracks.append(track)
+
+        # Get recent tracks (60%) - cached album list
+        recent_album_ids = self._get_cached_recent_albums(artist_id)
+        recent_track_items = self._get_tracks_from_albums(recent_album_ids, limit_per_album=2)
+        recent_track_items = recent_track_items[:self.TRACKS_PER_ARTIST_RECENT]
+
+        # Batch fetch full track details for recent tracks
+        recent_track_ids = [t['id'] for t in recent_track_items if t and t.get('id')]
+        if recent_track_ids:
+            try:
+                # Spotify supports up to 50 tracks per call
+                full_tracks = self.sp.tracks(recent_track_ids, market=market)
+                for track in full_tracks.get('tracks', []):
+                    if track:
+                        track['_track_type'] = 'recent'
+                        track['_artist_name'] = artist_name
+                        track['_language'] = language
+                        tracks.append(track)
+            except Exception as e:
+                print(f"    Error batch fetching tracks: {e}")
+
+        return tracks
+
     def get_song_recommendations(self, image_analysis, offset=0, excluded_ids=None):
         """
         Get song recommendations using Artist-Centric Algorithm with Recency
@@ -709,95 +823,47 @@ class SpotifyService:
             print(f"[Step 2] English artists: {english_artists[:3]}... ({len(english_artists)} total)")
             print(f"[Step 2] Hindi artists: {hindi_artists[:3]}... ({len(hindi_artists)} total)")
 
-            # Step 3: Get tracks from artists (60% recent + 40% top tracks)
+            # Step 3: Get tracks from artists (60% recent + 40% top tracks) - PARALLEL
+            print(f"\n[Step 3] Fetching tracks in parallel...")
+            import time
+            start_time = time.time()
+
             all_tracks_with_metadata = []
 
-            # Process English artists
-            print(f"\n[Step 3] Fetching English tracks...")
+            # Prepare artist tasks for parallel execution
+            artist_tasks = []
+
+            # Add English artists
             for artist_name in english_artists:
-                artist_id = self._search_artist_by_name(artist_name, market='US')
-                if not artist_id:
-                    print(f"  ⚠️  Could not find artist: {artist_name}")
-                    continue
+                artist_tasks.append((artist_name, 'english', 'US', normalized_mood))
 
-                print(f"  ✓ Processing: {artist_name}")
-
-                # Get recent albums (60% of tracks)
-                recent_album_ids = self._get_artist_recent_albums(artist_id, market='US')
-                recent_tracks = self._get_tracks_from_albums(recent_album_ids, limit_per_album=2)
-                recent_tracks = recent_tracks[:self.TRACKS_PER_ARTIST_RECENT]
-
-                # Get top tracks (40% of tracks)
-                try:
-                    top_tracks_response = self.sp.artist_top_tracks(artist_id, country='US')
-                    top_tracks = top_tracks_response.get('tracks', [])[:self.TRACKS_PER_ARTIST_TOP]
-                except Exception as e:
-                    print(f"    Error getting top tracks: {e}")
-                    top_tracks = []
-
-                # Combine and mark with metadata
-                for track in recent_tracks:
-                    if track and track.get('id'):
-                        # Need to get full track object with album info
-                        try:
-                            full_track = self.sp.track(track['id'], market='US')
-                            full_track['_track_type'] = 'recent'
-                            full_track['_artist_name'] = artist_name
-                            full_track['_language'] = 'english'
-                            all_tracks_with_metadata.append(full_track)
-                        except:
-                            continue
-
-                for track in top_tracks:
-                    if track and track.get('id'):
-                        track['_track_type'] = 'top'
-                        track['_artist_name'] = artist_name
-                        track['_language'] = 'english'
-                        all_tracks_with_metadata.append(track)
-
-            # Process Hindi artists
-            print(f"\n[Step 3] Fetching Hindi tracks...")
+            # Add Hindi artists
             for artist_name in hindi_artists:
-                artist_id = self._search_artist_by_name(artist_name, market='IN')
-                if not artist_id:
-                    print(f"  ⚠️  Could not find artist: {artist_name}")
-                    continue
+                artist_tasks.append((artist_name, 'hindi', 'IN', normalized_mood))
 
-                print(f"  ✓ Processing: {artist_name}")
+            # Process artists in parallel (max 6 workers to avoid rate limiting)
+            with ThreadPoolExecutor(max_workers=6) as executor:
+                # Submit all artist processing tasks
+                future_to_artist = {
+                    executor.submit(self._process_single_artist, *task): task[0]
+                    for task in artist_tasks
+                }
 
-                # Get recent albums (60%)
-                recent_album_ids = self._get_artist_recent_albums(artist_id, market='IN')
-                recent_tracks = self._get_tracks_from_albums(recent_album_ids, limit_per_album=2)
-                recent_tracks = recent_tracks[:self.TRACKS_PER_ARTIST_RECENT]
+                # Collect results as they complete
+                for future in as_completed(future_to_artist):
+                    artist_name = future_to_artist[future]
+                    try:
+                        tracks = future.result()
+                        if tracks:
+                            all_tracks_with_metadata.extend(tracks)
+                            print(f"  ✓ Processed: {artist_name} ({len(tracks)} tracks)")
+                        else:
+                            print(f"  ⚠️  No tracks from: {artist_name}")
+                    except Exception as e:
+                        print(f"  ❌ Error processing {artist_name}: {e}")
 
-                # Get top tracks (40%)
-                try:
-                    top_tracks_response = self.sp.artist_top_tracks(artist_id, country='IN')
-                    top_tracks = top_tracks_response.get('tracks', [])[:self.TRACKS_PER_ARTIST_TOP]
-                except Exception as e:
-                    print(f"    Error getting top tracks: {e}")
-                    top_tracks = []
-
-                # Combine and mark with metadata
-                for track in recent_tracks:
-                    if track and track.get('id'):
-                        try:
-                            full_track = self.sp.track(track['id'], market='IN')
-                            full_track['_track_type'] = 'recent'
-                            full_track['_artist_name'] = artist_name
-                            full_track['_language'] = 'hindi'
-                            all_tracks_with_metadata.append(full_track)
-                        except:
-                            continue
-
-                for track in top_tracks:
-                    if track and track.get('id'):
-                        track['_track_type'] = 'top'
-                        track['_artist_name'] = artist_name
-                        track['_language'] = 'hindi'
-                        all_tracks_with_metadata.append(track)
-
-            print(f"\n[Step 3] Total tracks collected: {len(all_tracks_with_metadata)}")
+            elapsed = time.time() - start_time
+            print(f"\n[Step 3] Total tracks collected: {len(all_tracks_with_metadata)} in {elapsed:.2f}s ⚡")
 
             # Deduplicate tracks by ID (keep first occurrence)
             seen_ids = set()

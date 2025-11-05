@@ -147,6 +147,64 @@ def validate_image(filepath):
         return False, f'Invalid image file: {str(e)}'
 
 
+def optimize_image(filepath, max_size=1024):
+    """
+    Optimize image for faster upload to Claude API
+
+    Resizes image to max dimensions while maintaining aspect ratio.
+    Converts to RGB if needed for JPEG compatibility.
+
+    Args:
+        filepath: Path to the image file
+        max_size: Maximum dimension (width or height) in pixels
+
+    Returns:
+        None (modifies file in place)
+    """
+    try:
+        img = Image.open(filepath)
+
+        # Get original dimensions
+        width, height = img.size
+
+        # Check if resize is needed
+        if max(width, height) > max_size:
+            # Calculate new size maintaining aspect ratio
+            if width > height:
+                new_width = max_size
+                new_height = int(height * (max_size / width))
+            else:
+                new_height = max_size
+                new_width = int(width * (max_size / height))
+
+            # Resize image with high-quality resampling
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+            # Convert RGBA to RGB if needed (for JPEG compatibility)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                # Create white background
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+                img = background
+            elif img.mode not in ('RGB', 'L'):
+                img = img.convert('RGB')
+
+            # Save optimized image back to filepath
+            # Use JPEG format with 85% quality for good balance
+            img.save(filepath, 'JPEG', quality=85, optimize=True)
+
+            print(f"  📸 Image optimized: {width}x{height} → {new_width}x{new_height} (saved {((1 - (new_width*new_height)/(width*height))*100):.1f}% pixels)")
+        else:
+            print(f"  📸 Image already optimal: {width}x{height} (no resize needed)")
+
+    except Exception as e:
+        # If optimization fails, continue with original image
+        print(f"  ⚠️  Image optimization failed: {e} (using original)")
+        pass
+
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -189,6 +247,9 @@ def analyze_photo():
             if not is_valid:
                 os.remove(filepath)  # Clean up invalid file
                 return jsonify({'error': error_msg}), 400
+
+            # Optimize image for faster Claude API upload (resize to max 1024x1024)
+            optimize_image(filepath, max_size=1024)
 
             # Analyze image with LLM
             analysis = image_analyzer.analyze_image(filepath)
