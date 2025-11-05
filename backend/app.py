@@ -8,10 +8,14 @@ import os
 import secrets
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from pillow_heif import register_heif_opener
 
 from services.image_analyzer import ImageAnalyzer
 from services.spotify_service import SpotifyService
 from config import Config
+
+# Register HEIF opener with Pillow to support .heic files
+register_heif_opener()
 
 # Load environment variables
 load_dotenv()
@@ -45,7 +49,7 @@ CORS(app, resources={
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'heif'}
 MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -133,7 +137,7 @@ def validate_image(filepath):
             return False, f'Image too small: {width}x{height}. Minimum: {MIN_DIMENSION}x{MIN_DIMENSION}'
 
         # Check format is supported
-        supported_formats = {'PNG', 'JPEG', 'GIF', 'WEBP'}
+        supported_formats = {'PNG', 'JPEG', 'GIF', 'WEBP', 'HEIC', 'HEIF'}
         if img.format not in supported_formats:
             return False, f'Unsupported image format: {img.format}. Supported: {", ".join(supported_formats)}'
 
@@ -172,7 +176,7 @@ def analyze_photo():
             return jsonify({'error': 'No file selected'}), 400
 
         if not allowed_file(file.filename):
-            return jsonify({'error': 'Invalid file type. Allowed: png, jpg, jpeg, gif, webp'}), 400
+            return jsonify({'error': 'Invalid file type. Allowed: png, jpg, jpeg, gif, webp, heic, heif'}), 400
 
         # Save file temporarily
         filename = secure_filename(file.filename)
