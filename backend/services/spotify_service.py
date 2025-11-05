@@ -769,6 +769,126 @@ class SpotifyService:
 
         return tracks
 
+    def _generate_all_songs_with_diversity(self, scored_tracks, english_count, hindi_count, max_songs=30):
+        """
+        Generate multiple songs from scored tracks with diversity rules applied.
+
+        This generates more songs than needed (up to max_songs) so they can be cached
+        and used for "load more" requests without re-running the algorithm.
+
+        Args:
+            scored_tracks: List of tracks with scores
+            english_count: Target ratio for English songs in first batch
+            hindi_count: Target ratio for Hindi songs in first batch
+            max_songs: Maximum number of songs to generate
+
+        Returns:
+            List of formatted song dictionaries
+        """
+        all_songs = []
+        artist_counts = {}
+
+        # Separate by language
+        english_pool = [t for t in scored_tracks if t.get('_language') == 'english']
+        hindi_pool = [t for t in scored_tracks if t.get('_language') == 'hindi']
+
+        # Track how many of each language we've added
+        english_added = 0
+        hindi_added = 0
+
+        # For the first 5 songs, maintain the target ratio
+        # After that, alternate between languages to maintain variety
+
+        def format_track(track, lang_type):
+            """Helper to format a track into song dictionary"""
+            return {
+                'id': track['id'],
+                'name': track['name'],
+                'artist': ', '.join([a['name'] for a in track['artists']]),
+                'album': track['album']['name'],
+                'preview_url': track.get('preview_url'),
+                'spotify_url': track['external_urls']['spotify'],
+                'album_cover': track['album']['images'][0]['url'] if track['album']['images'] else None,
+                'duration_ms': track['duration_ms'],
+                'popularity': track.get('popularity', 0),
+                'language_type': lang_type,
+                'vibe_score': round(track['_vibe_score'], 2),
+                'recency_bonus': round(track['_recency_bonus'], 2),
+                'final_score': round(track['_final_score'], 2)
+            }
+
+        # Phase 1: Fill first 5 songs with target ratio
+        english_idx = 0
+        hindi_idx = 0
+
+        while len(all_songs) < 5 and (english_idx < len(english_pool) or hindi_idx < len(hindi_pool)):
+            # Determine which language to add next based on target ratio
+            if english_added < english_count and english_idx < len(english_pool):
+                track = english_pool[english_idx]
+                english_idx += 1
+
+                artist_name = track.get('_artist_name', 'Unknown')
+                if artist_counts.get(artist_name, 0) >= self.MAX_TRACKS_PER_ARTIST:
+                    continue
+
+                artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
+                all_songs.append(format_track(track, 'English'))
+                english_added += 1
+
+            elif hindi_added < hindi_count and hindi_idx < len(hindi_pool):
+                track = hindi_pool[hindi_idx]
+                hindi_idx += 1
+
+                artist_name = track.get('_artist_name', 'Unknown')
+                if artist_counts.get(artist_name, 0) >= self.MAX_TRACKS_PER_ARTIST:
+                    continue
+
+                artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
+                all_songs.append(format_track(track, 'Hindi'))
+                hindi_added += 1
+
+        # Phase 2: Fill remaining slots (up to max_songs) alternating between languages
+        while len(all_songs) < max_songs and (english_idx < len(english_pool) or hindi_idx < len(hindi_pool)):
+            # Alternate: add English if we have more Hindi, or vice versa
+            if english_added <= hindi_added and english_idx < len(english_pool):
+                track = english_pool[english_idx]
+                english_idx += 1
+
+                artist_name = track.get('_artist_name', 'Unknown')
+                if artist_counts.get(artist_name, 0) >= self.MAX_TRACKS_PER_ARTIST:
+                    continue
+
+                artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
+                all_songs.append(format_track(track, 'English'))
+                english_added += 1
+
+            elif hindi_idx < len(hindi_pool):
+                track = hindi_pool[hindi_idx]
+                hindi_idx += 1
+
+                artist_name = track.get('_artist_name', 'Unknown')
+                if artist_counts.get(artist_name, 0) >= self.MAX_TRACKS_PER_ARTIST:
+                    continue
+
+                artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
+                all_songs.append(format_track(track, 'Hindi'))
+                hindi_added += 1
+            else:
+                # Try English again if Hindi is exhausted
+                if english_idx < len(english_pool):
+                    track = english_pool[english_idx]
+                    english_idx += 1
+
+                    artist_name = track.get('_artist_name', 'Unknown')
+                    if artist_counts.get(artist_name, 0) >= self.MAX_TRACKS_PER_ARTIST:
+                        continue
+
+                    artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
+                    all_songs.append(format_track(track, 'English'))
+                    english_added += 1
+
+        return all_songs
+
     def get_song_recommendations(self, image_analysis, offset=0, excluded_ids=None):
         """
         Get song recommendations using Artist-Centric Algorithm with Recency
@@ -960,120 +1080,42 @@ class SpotifyService:
             # Step 5: Sort by final score
             scored_tracks.sort(key=lambda x: x['_final_score'], reverse=True)
 
-            # Step 6: Determine language mix
+            # Step 6: Determine language mix for first 5 songs
             english_count, hindi_count = self._determine_language_mix(image_analysis)
             print(f"\n[Step 5] Language mix: {english_count} English, {hindi_count} Hindi")
 
-            # Step 7: Select final tracks with diversity
-            final_songs = []
-            artist_counts = {}
+            # Step 7: Generate ALL songs with diversity (for caching)
+            all_available_songs = self._generate_all_songs_with_diversity(
+                scored_tracks,
+                english_count,
+                hindi_count,
+                max_songs=30  # Generate up to 30 songs for "load more"
+            )
 
-            # Separate by language
-            english_pool = [t for t in scored_tracks if t.get('_language') == 'english']
-            hindi_pool = [t for t in scored_tracks if t.get('_language') == 'hindi']
+            print(f"[Step 6] Generated {len(all_available_songs)} total songs for caching")
 
-            print(f"[Step 6] English pool: {len(english_pool)}, Hindi pool: {len(hindi_pool)}")
-
-            # Select English tracks
-            for track in english_pool:
-                if len([s for s in final_songs if s.get('language_type') == 'English']) >= english_count:
-                    break
-
-                artist_name = track.get('_artist_name', 'Unknown')
-                if artist_counts.get(artist_name, 0) >= self.MAX_TRACKS_PER_ARTIST:
-                    continue
-
-                artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
-
-                final_songs.append({
-                    'id': track['id'],
-                    'name': track['name'],
-                    'artist': ', '.join([a['name'] for a in track['artists']]),
-                    'album': track['album']['name'],
-                    'preview_url': track.get('preview_url'),
-                    'spotify_url': track['external_urls']['spotify'],
-                    'album_cover': track['album']['images'][0]['url'] if track['album']['images'] else None,
-                    'duration_ms': track['duration_ms'],
-                    'popularity': track.get('popularity', 0),
-                    'language_type': 'English',
-                    'vibe_score': round(track['_vibe_score'], 2),
-                    'recency_bonus': round(track['_recency_bonus'], 2),
-                    'final_score': round(track['_final_score'], 2)
-                })
-
-            # Select Hindi tracks
-            for track in hindi_pool:
-                if len([s for s in final_songs if s.get('language_type') == 'Hindi']) >= hindi_count:
-                    break
-
-                artist_name = track.get('_artist_name', 'Unknown')
-                if artist_counts.get(artist_name, 0) >= self.MAX_TRACKS_PER_ARTIST:
-                    continue
-
-                artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
-
-                final_songs.append({
-                    'id': track['id'],
-                    'name': track['name'],
-                    'artist': ', '.join([a['name'] for a in track['artists']]),
-                    'album': track['album']['name'],
-                    'preview_url': track.get('preview_url'),
-                    'spotify_url': track['external_urls']['spotify'],
-                    'album_cover': track['album']['images'][0]['url'] if track['album']['images'] else None,
-                    'duration_ms': track['duration_ms'],
-                    'popularity': track.get('popularity', 0),
-                    'language_type': 'Hindi',
-                    'vibe_score': round(track['_vibe_score'], 2),
-                    'recency_bonus': round(track['_recency_bonus'], 2),
-                    'final_score': round(track['_final_score'], 2)
-                })
-
-            # Fill remaining slots if needed
-            if len(final_songs) < 5:
-                print(f"\n[Step 7] Only {len(final_songs)}/5 songs, filling remaining slots...")
-                remaining_tracks = [t for t in scored_tracks if t['id'] not in [s['id'] for s in final_songs]]
-
-                for track in remaining_tracks:
-                    if len(final_songs) >= 5:
-                        break
-
-                    artist_name = track.get('_artist_name', 'Unknown')
-                    if artist_counts.get(artist_name, 0) >= self.MAX_TRACKS_PER_ARTIST:
-                        continue
-
-                    artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
-
-                    final_songs.append({
-                        'id': track['id'],
-                        'name': track['name'],
-                        'artist': ', '.join([a['name'] for a in track['artists']]),
-                        'album': track['album']['name'],
-                        'preview_url': track.get('preview_url'),
-                        'spotify_url': track['external_urls']['spotify'],
-                        'album_cover': track['album']['images'][0]['url'] if track['album']['images'] else None,
-                        'duration_ms': track['duration_ms'],
-                        'popularity': track.get('popularity', 0),
-                        'language_type': track.get('_language', 'Mixed').title(),
-                        'vibe_score': round(track['_vibe_score'], 2),
-                        'recency_bonus': round(track['_recency_bonus'], 2),
-                        'final_score': round(track['_final_score'], 2)
-                    })
+            # Return first 5 songs from the full list
+            final_songs = all_available_songs[:5]
 
             # Final summary
             print(f"\n{'='*80}")
-            print(f"[FINAL] Returning {len(final_songs)} songs")
+            print(f"[FINAL] Returning {len(final_songs)} songs (with {len(all_available_songs)} total available for 'load more')")
             for i, song in enumerate(final_songs, 1):
                 print(f"  {i}. [{song['language_type']}] {song['name']} - {song['artist']}")
                 print(f"     Vibe: {song['vibe_score']}, Recency: {song['recency_bonus']}, Score: {song['final_score']}")
             print(f"{'='*80}\n")
 
-            return final_songs
+            # Return dict with both first batch and full list for caching
+            return {
+                'songs': final_songs,
+                'all_songs': all_available_songs  # For "load more" caching
+            }
 
         except Exception as e:
             print(f"\n[ERROR] Exception in get_song_recommendations: {e}")
             import traceback
             traceback.print_exc()
-            return []
+            return {'songs': [], 'all_songs': []}
 
     def _get_mood_playlists(self, mood, genres, themes, keywords=None):
         """

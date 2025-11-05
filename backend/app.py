@@ -255,15 +255,18 @@ def analyze_photo():
             analysis = image_analyzer.analyze_image(filepath)
 
             # Get song recommendations from Spotify
-            songs = spotify_service.get_song_recommendations(analysis)
+            result = spotify_service.get_song_recommendations(analysis)
+            songs = result['songs']  # First 5 songs
+            all_songs = result['all_songs']  # Full list for caching (up to 30 songs)
 
             # Create a secure random session ID
             session_id = secrets.token_urlsafe(32)
 
-            # Store session with analysis and expiry
+            # Store session with analysis, returned songs, and ALL available songs for instant "load more"
             session_songs[session_id] = {
-                'analysis': analysis,  # Store analysis for "more songs" requests
-                'songs': [s['id'] for s in songs],
+                'analysis': analysis,  # Store analysis for backup
+                'songs': [s['id'] for s in songs],  # Track returned song IDs
+                'all_songs': all_songs,  # Cache ALL songs for instant "load more"
                 'expires_at': datetime.now() + timedelta(hours=SESSION_EXPIRY_HOURS)
             }
 
@@ -367,21 +370,54 @@ def get_more_songs():
         if not isinstance(offset, int) or offset < 0:
             return jsonify({'error': 'Invalid offset value'}), 400
 
-        # Get previously returned songs for this session
-        excluded_ids = session_data.get('songs', [])
+        # Check if we have cached songs (instant "load more")
+        all_songs = session_data.get('all_songs', [])
 
-        # Get more song recommendations with offset
-        songs = spotify_service.get_song_recommendations(analysis, offset=offset, excluded_ids=excluded_ids)
+        if all_songs:
+            # INSTANT "load more" - just slice from cached songs!
+            print(f"[LOAD MORE] Using cached songs (instant) - {len(all_songs)} available")
 
-        # Track the new songs and update expiry
-        if session_id and session_id in session_songs:
-            session_songs[session_id]['songs'].extend([s['id'] for s in songs])
-            session_songs[session_id]['expires_at'] = datetime.now() + timedelta(hours=SESSION_EXPIRY_HOURS)
+            # Get how many songs have been returned so far
+            returned_count = len(session_data.get('songs', []))
 
-        return jsonify({
-            'success': True,
-            'songs': songs
-        }), 200
+            # Calculate slice indices
+            start_idx = returned_count
+            end_idx = start_idx + 5
+
+            # Get next batch from cached songs
+            songs = all_songs[start_idx:end_idx]
+
+            print(f"[LOAD MORE] Returning songs {start_idx+1}-{end_idx} from cache")
+
+            # Track the new songs and update expiry
+            if songs:
+                session_songs[session_id]['songs'].extend([s['id'] for s in songs])
+                session_songs[session_id]['expires_at'] = datetime.now() + timedelta(hours=SESSION_EXPIRY_HOURS)
+
+            return jsonify({
+                'success': True,
+                'songs': songs,
+                'cached': True  # Indicate this was instant from cache
+            }), 200
+
+        else:
+            # Fallback: Re-run algorithm if cache is not available (backward compatibility)
+            print(f"[LOAD MORE] No cached songs, re-running algorithm (slow)")
+
+            excluded_ids = session_data.get('songs', [])
+            result = spotify_service.get_song_recommendations(analysis, offset=offset, excluded_ids=excluded_ids)
+            songs = result['songs']
+
+            # Track the new songs and update expiry
+            if session_id and session_id in session_songs:
+                session_songs[session_id]['songs'].extend([s['id'] for s in songs])
+                session_songs[session_id]['expires_at'] = datetime.now() + timedelta(hours=SESSION_EXPIRY_HOURS)
+
+            return jsonify({
+                'success': True,
+                'songs': songs,
+                'cached': False  # Indicate this was slow from API
+            }), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
