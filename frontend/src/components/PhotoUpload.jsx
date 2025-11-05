@@ -7,13 +7,23 @@ function PhotoUpload({ onUpload, error }) {
   const fileInputRef = useRef(null)
 
   const handleFileChange = (file) => {
-    if (file && file.type.startsWith('image/')) {
+    if (!file) return
+
+    // Check if it's an image by MIME type OR file extension
+    const isImage = file.type.startsWith('image/')
+    const fileName = file.name.toLowerCase()
+    const hasImageExtension = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(fileName)
+
+    if (isImage || hasImageExtension) {
       const reader = new FileReader()
       reader.onloadend = () => {
         setPreview(reader.result)
       }
       reader.readAsDataURL(file)
       onUpload(file)
+    } else {
+      // Show error for unsupported file types
+      console.warn('Unsupported file type:', file.type, file.name)
     }
   }
 
@@ -74,7 +84,7 @@ function PhotoUpload({ onUpload, error }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
             <p className="upload-text">Click to upload or drag and drop</p>
-            <p className="upload-hint">PNG, JPG, GIF up to 10MB</p>
+            <p className="upload-hint">PNG, JPG, GIF, HEIC up to 16MB</p>
           </div>
         )}
       </div>
