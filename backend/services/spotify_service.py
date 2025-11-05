@@ -224,6 +224,20 @@ class SpotifyService:
             # Adjust tempo based on mood to ensure it makes sense
             tempo = self._adjust_tempo_for_mood(tempo, mood, energy)
 
+            # Pre-compute audio feature ranges so we have safe defaults even when seed lookup fails
+            energy_min = max(0.0, energy - 0.2)
+            energy_max = min(1.0, energy + 0.2)
+            valence_min = max(0.0, valence - 0.2)
+            valence_max = min(1.0, valence + 0.2)
+            danceability_min = max(0.0, danceability - 0.2)
+            danceability_max = min(1.0, danceability + 0.2)
+            acousticness_min = max(0.0, acousticness - 0.2)
+            acousticness_max = min(1.0, acousticness + 0.2)
+            instrumentalness_min = max(0.0, instrumentalness - 0.15)
+            instrumentalness_max = min(1.0, instrumentalness + 0.15)
+            tempo_min = max(40, tempo - 15)
+            tempo_max = min(200, tempo + 15)
+
             # Dynamically determine language mix based on image analysis
             english_count, hindi_count = self._determine_language_mix(image_analysis)
 
@@ -263,23 +277,6 @@ class SpotifyService:
                     if seed_tracks:
                         print(f"[SpotifyService] Using seed tracks: {[t['name'] for t in seed_tracks[:3]]}")
                         seed_ids = [t['id'] for t in seed_tracks[:5]]
-
-                        # Use ranges instead of exact targets for more flexible matching
-                        # Range is ±0.2 around target (min 0.0, max 1.0)
-                        energy_min = max(0.0, energy - 0.2)
-                        energy_max = min(1.0, energy + 0.2)
-                        valence_min = max(0.0, valence - 0.2)
-                        valence_max = min(1.0, valence + 0.2)
-                        danceability_min = max(0.0, danceability - 0.2)
-                        danceability_max = min(1.0, danceability + 0.2)
-                        acousticness_min = max(0.0, acousticness - 0.2)
-                        acousticness_max = min(1.0, acousticness + 0.2)
-                        instrumentalness_min = max(0.0, instrumentalness - 0.15)
-                        instrumentalness_max = min(1.0, instrumentalness + 0.15)
-
-                        # Tempo range is ±15 BPM
-                        tempo_min = max(40, tempo - 15)
-                        tempo_max = min(200, tempo + 15)
 
                         print(f"[SpotifyService] Audio ranges - energy:[{energy_min:.2f}-{energy_max:.2f}], valence:[{valence_min:.2f}-{valence_max:.2f}], tempo:[{tempo_min}-{tempo_max}]")
 
