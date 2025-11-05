@@ -197,34 +197,288 @@ The backend sends the image to OpenAI GPT-4o (or Anthropic Claude) which analyze
 - **Music Style**: Type of instrumentation and feel that would match
 - **Keywords**: Descriptive terms for better music matching
 
-### 3. Music Recommendation Algorithm
+### 3. Music Recommendation Algorithm (Artist-Centric with Recency)
 
-**Step 1: Dual-Track Search**
-- Searches **English tracks**: Indie, Alternative, Pop, R&B, Electronic
-- Searches **Hindi/Indian tracks**: Bollywood, Sufi, Punjabi, Indie Hindi
+#### 🎯 **Algorithm Overview**
 
-**Step 2: Quality Filtering**
-- Only songs with Spotify popularity ≥ 40
-- Removes duplicates within request
-- Tracks previously shown songs via session ID
+StoryBeats uses a **sophisticated artist-centric recommendation system** that combines:
+- **Curated Quality Artists** (72 hand-picked artists across 9 moods)
+- **Recency-Based Track Selection** (60% recent releases, 40% proven hits)
+- **Strict Vibe Matching** (>0.75 similarity threshold)
+- **Multiple Spotify APIs** (artist_top_tracks, artist_albums, artist_related_artists, recommendations)
 
-**Step 3: Smart Ranking**
-- Ranks by popularity
-- Applies diversity penalty for repeated artists
-- Ensures max 2 songs per artist
+This ensures you get **fresh, high-quality tracks** that perfectly match your photo's vibe!
 
-**Step 4: Language Mix**
+---
+
+#### 📊 **9 Mood Categories**
+
+The algorithm maps your photo's mood to one of 9 categories, each with 7-8 curated quality artists:
+
+| Mood | Description | Example Photos | English Artists | Hindi Artists |
+|------|-------------|----------------|----------------|---------------|
+| **romantic** | Love songs, dreamy vibes | Couples, dates, sunsets | Cigarettes After Sex, Lauv, Gracie Abrams | Arijit Singh, Atif Aslam, Prateek Kuhad |
+| **energetic** | High energy, upbeat | Gym, parties, dancing | Tame Impala, Glass Animals, Arctic Monkeys | Badshah, Diljit Dosanjh, Divine |
+| **peaceful** | Calm, relaxing, soothing | Nature, meditation, cafes | Bon Iver, Novo Amor, Phoebe Bridgers | A.R. Rahman, Lucky Ali, When Chai Met Toast |
+| **melancholic** | Sad, emotional, reflective | Rain, alone, thoughtful | Radiohead, Mazzy Star, Mitski | Mohit Chauhan, KK, Anuv Jain |
+| **happy** | Joyful, uplifting, cheerful | Celebrations, friends | Two Door Cinema Club, Phoenix, COIN | Guru Randhawa, Neha Kakkar, Ritviz |
+| **confident** | Bold, swagger, powerful | Fashion, urban, boss mode | The Weeknd, Travis Scott, Dua Lipa | Badshah, Divine, Seedhe Maut |
+| **nostalgic** | Retro, classic, memories | Old photos, throwback | The 1975, Arctic Monkeys, Mac DeMarco | Kishore Kumar, Kumar Sanu, Lucky Ali |
+| **dreamy** | Ethereal, soft, aesthetic | Clouds, soft light, aesthetic | Beach House, Clairo, ODESZA | Prateek Kuhad, Ritviz, Lifafa |
+| **moody** | Dark, atmospheric, cinematic | Night city, urban, vibe | Frank Ocean, Don Toliver, SZA | The Local Train, Prabh Deep, Seedhe Maut |
+
+---
+
+#### 🎨 **Complete Artist Lists**
+
+**ENGLISH ARTISTS** (Mainstream Pop + Indie Mix)
+
+```
+romantic:      Cigarettes After Sex, The Neighbourhood, Lauv, Gracie Abrams,
+               Conan Gray, Jeremy Zucker, mxmtoon, girl in red
+
+energetic:     Tame Impala, Glass Animals, MGMT, Foster The People,
+               Two Door Cinema Club, The Strokes, Arctic Monkeys, Phoenix
+
+peaceful:      Bon Iver, Novo Amor, Phoebe Bridgers, Iron & Wine,
+               Sufjan Stevens, Fleet Foxes, Jose Gonzalez, Ben Howard
+
+melancholic:   Radiohead, Mazzy Star, The National, Daughter,
+               Sleeping At Last, Mitski, Phoebe Bridgers, Elliott Smith
+
+happy:         Two Door Cinema Club, Passion Pit, Phoenix, COIN,
+               MGMT, Young The Giant, Grouplove, Smallpools
+
+confident:     The Weeknd, Travis Scott, Dua Lipa, Billie Eilish,
+               Khalid, Post Malone, Doja Cat, SZA
+
+nostalgic:     The 1975, Arctic Monkeys, Mac DeMarco, MGMT,
+               Tame Impala, Vampire Weekend, The Strokes, Kings of Leon
+
+dreamy:        Beach House, M83, ODESZA, Clairo,
+               Men I Trust, Still Woozy, Rex Orange County, Kali Uchis
+
+moody:         Frank Ocean, Don Toliver, Travis Scott, SZA,
+               The Weeknd, Bryson Tiller, PartyNextDoor, 6LACK
+```
+
+**HINDI ARTISTS** (Bollywood + Indie Hindi + Punjabi)
+
+```
+romantic:      Arijit Singh, Atif Aslam, Shreya Ghoshal, Armaan Malik,
+               Jubin Nautiyal, Prateek Kuhad, Anuv Jain, Raghav Chaitanya
+
+energetic:     Badshah, Diljit Dosanjh, Divine, Raftaar,
+               Nucleya, Ritviz, Seedhe Maut, The Local Train
+
+peaceful:      A.R. Rahman, Shaan, Lucky Ali, Prateek Kuhad,
+               Mohit Chauhan, Sonu Nigam, Papon, When Chai Met Toast
+
+melancholic:   Mohit Chauhan, KK, Sonu Nigam, Jubin Nautiyal,
+               Arijit Singh, Atif Aslam, Anuv Jain, Prateek Kuhad
+
+happy:         Guru Randhawa, Neha Kakkar, Darshan Raval, Ritviz,
+               Diljit Dosanjh, Harrdy Sandhu, Asees Kaur, When Chai Met Toast
+
+confident:     Badshah, Divine, Raftaar, Ikka,
+               Seedhe Maut, Prabh Deep, Naezy, MC Stan
+
+nostalgic:     Kishore Kumar, R.D. Burman, Mohammed Rafi, Kumar Sanu,
+               Alka Yagnik, Udit Narayan, Sonu Nigam, Lucky Ali
+
+dreamy:        Prateek Kuhad, Anuv Jain, Ritviz, When Chai Met Toast,
+               The Local Train, Zaeden, Lifafa, Kamakshi Khanna
+
+moody:         Anuv Jain, Prateek Kuhad, The Local Train, Lifafa,
+               Seedhe Maut, Prabh Deep, Dropped Out, Sez on the Beat
+```
+
+---
+
+#### 🔄 **Recommendation Pipeline**
+
+```
+📸 Photo Upload
+       ↓
+🤖 LLM Analysis → Extract (mood, energy, valence, tempo, themes)
+       ↓
+🎯 Map mood to 1 of 9 categories
+       ↓
+    ┌──────┴──────┐
+    ↓             ↓
+ENGLISH (7-8)  HINDI (7-8)
+ artists         artists
+    ↓             ↓
+FOR EACH ARTIST:
+  ├─ Get recent albums (last 18 months)
+  │  └─ Take 10 tracks → 60% of pool
+  │
+  └─ Get top tracks (all-time)
+     └─ Take 5 tracks → 40% of pool
+       ↓
+COMBINE: ~120 tracks total (15 × 8 artists)
+       ↓
+FILTER by audio features:
+  ├─ Calculate vibe_score for each track
+  ├─ Keep only: vibe_score > 0.75 (strict!)
+  ├─ Popularity range: 47-85
+  └─ Tempo validation by mood
+       ↓
+~40-50 high-quality tracks remain
+       ↓
+SORT by composite score:
+  ├─ vibe_match_score × 0.5 (most important)
+  ├─ recency_bonus × 0.3 (prefer fresh)
+  └─ popularity/100 × 0.2 (quality indicator)
+       ↓
+USE TOP 20 as seeds for Recommendations API:
+  ├─ seed_tracks=[top_10_track_ids]
+  ├─ seed_artists=[3_best_artist_ids]
+  ├─ target_energy, target_valence, etc.
+  └─ min/max ranges (±0.15, tight!)
+       ↓
+GET RELATED ARTISTS:
+  └─ sp.artist_related_artists(top_3_artists)
+     └─ Get their top 5 tracks each
+       ↓
+FINAL POOL: ~60-70 high-quality tracks
+       ↓
+APPLY DIVERSITY & SELECTION:
+  ├─ Max 2 tracks per artist
+  ├─ Balanced popularity distribution
+  ├─ Deduplicate by track_id
+  └─ Sort by final_score
+       ↓
+SELECT FINAL 5 TRACKS:
+  ├─ 2-3 English (based on cultural_vibe)
+  └─ 2-3 Hindi (based on cultural_vibe)
+       ↓
+🎵 RETURN TO USER
+```
+
+---
+
+#### ⚙️ **Algorithm Configuration**
+
+```python
+# Recency Split
+RECENT_TRACKS_RATIO = 0.6      # 60% from last 18 months
+CLASSIC_TRACKS_RATIO = 0.4     # 40% all-time top tracks
+
+# Quality Filters
+POPULARITY_MIN = 47            # Minimum popularity score
+POPULARITY_MAX = 85            # Maximum (avoid overplayed)
+VIBE_THRESHOLD = 0.75          # Strict vibe matching (0.0-1.0)
+AUDIO_RANGE_TOLERANCE = 0.15   # ±0.15 for energy, valence, etc.
+
+# Track Selection
+TRACKS_PER_ARTIST_RECENT = 10  # From recent albums
+TRACKS_PER_ARTIST_TOP = 5      # All-time top tracks
+MAX_TRACKS_PER_ARTIST = 2      # In final selection
+
+# Scoring Weights
+VIBE_WEIGHT = 0.5              # 50% - vibe matching
+RECENCY_WEIGHT = 0.3           # 30% - track freshness
+POPULARITY_WEIGHT = 0.2        # 20% - quality/popularity
+
+# Spotify API Usage
+MARKETS = {
+    'english': 'US',           # US market for English
+    'hindi': 'IN'              # India market for Hindi
+}
+```
+
+---
+
+#### 🎵 **Vibe Matching Formula**
+
+The algorithm calculates a **vibe match score** for each track:
+
+```python
+vibe_match_score = (
+    (1.0 - abs(track_energy - target_energy)) × 0.30 +
+    (1.0 - abs(track_valence - target_valence)) × 0.30 +
+    (1.0 - abs(track_danceability - target_danceability)) × 0.20 +
+    (1.0 - abs(track_acousticness - target_acousticness)) × 0.10 +
+    tempo_score × 0.10
+)
+
+# Only keep tracks with vibe_match_score > 0.75
+```
+
+**Recency Bonus Calculation:**
+
+```python
+days_since_release = (today - release_date).days
+
+if days_since_release ≤ 180:     # Last 6 months
+    recency_bonus = 1.0
+elif days_since_release ≤ 365:   # Last year
+    recency_bonus = 0.8
+elif days_since_release ≤ 540:   # Last 18 months
+    recency_bonus = 0.6
+else:                             # Older classics
+    recency_bonus = 0.3
+```
+
+**Final Track Score:**
+
+```python
+final_score = (
+    vibe_match_score × 0.5 +
+    recency_bonus × 0.3 +
+    (popularity / 100) × 0.2
+)
+```
+
+---
+
+#### ✨ **Key Improvements Over Previous Algorithm**
+
+| Aspect | Before | After |
+|--------|--------|-------|
+| **Artist Quality** | Random from playlists | 72 hand-picked quality artists |
+| **Track Freshness** | Mixed/unknown | 60% recent (last 18 months) |
+| **Vibe Matching** | 0.6 threshold (loose) | 0.75 threshold (strict) |
+| **Audio Ranges** | ±0.2 (wide) | ±0.15 (tight) |
+| **Sources** | 4 mixed sources | Single artist-centric source |
+| **Popularity** | 25-95 (too wide) | 47-85 (sweet spot) |
+| **Hindi Quality** | Generic playlists | Bollywood + Indie bands curated |
+| **Artist Pool** | Unknown/random | 7-8 quality artists per mood |
+| **APIs Used** | 3 APIs | 5 APIs (added artist APIs) |
+
+---
+
+#### 🚀 **Spotify APIs Used**
+
+1. **`sp.artist_albums(artist_id, album_type='single,album')`** - Get recent releases
+2. **`sp.album_tracks(album_id)`** - Get tracks from albums
+3. **`sp.artist_top_tracks(artist_id, market)`** - Get proven hits
+4. **`sp.artist_related_artists(artist_id)`** - Find similar artists
+5. **`sp.recommendations(seed_tracks, seed_artists, ...)`** - Generate recommendations
+6. **`sp.audio_features(track_ids)`** - Analyze audio characteristics
+
+---
+
+#### 🎯 **Language Mix Strategy**
+
 Based on cultural vibe analysis:
-- Indian aesthetic → 3 Hindi + 2 English
-- Western aesthetic → 4 English + 1 Hindi
-- Global/Fusion → 3 English + 2 Hindi
+- **Indian aesthetic** → 3 Hindi + 2 English
+- **Western aesthetic** → 4 English + 1 Hindi
+- **Global/Fusion** → 3 English + 2 Hindi (balanced)
 
-**Step 5: Return Results**
+---
+
+#### 💎 **Return Format**
+
 Returns 5 diverse, high-quality songs with:
 - Song name, artist, album
-- Album artwork
+- Album artwork (high resolution)
 - 30-second preview (if available)
 - Direct Spotify link
+- Popularity score
+- Language type (English/Hindi)
+- Popularity bucket (hidden gem/moderate/popular)
 
 ### 4. Get More Songs
 User can click "Get 5 More Songs" to get new recommendations:

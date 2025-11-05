@@ -517,326 +517,439 @@ class SpotifyService:
 
     def get_song_recommendations(self, image_analysis, offset=0, excluded_ids=None):
         """
-        Get song recommendations using Artist-Centric Algorithm with Recency
-
-        NEW ALGORITHM:
-        1. Normalize mood to one of 9 categories
-        2. Get curated artists for that mood (7-8 per language)
-        3. For each artist: Get 60% recent tracks + 40% top tracks
-        4. Filter by strict vibe matching (>0.75)
-        5. Score by: vibe (50%) + recency (30%) + popularity (20%)
-        6. Use top tracks as seeds for Recommendations API
-        7. Get related artists' tracks
-        8. Apply diversity rules and return final 5
+        Get song recommendations based on image analysis using trending/popular songs
 
         Args:
-            image_analysis (dict): Contains mood, energy, valence, etc.
-            offset (int): For pagination (unused in new algo, kept for compatibility)
-            excluded_ids (list): Track IDs to exclude
+            image_analysis (dict): Contains mood, themes, keywords, and genres
+            offset (int): Offset for getting different recommendations (pagination)
+            excluded_ids (list): List of track IDs to exclude (already returned)
 
         Returns:
-            list: 5 song recommendations with full metadata
+            list: Top 5 song recommendations with details
         """
         try:
-            from datetime import datetime
-
-            # Extract analysis data
+            # Extract relevant data from analysis
             mood = image_analysis.get('mood', 'happy')
+            genres = image_analysis.get('genres', ['pop'])
             energy = image_analysis.get('energy', 0.5)
             valence = image_analysis.get('valence', 0.5)
             danceability = image_analysis.get('danceability', 0.5)
             acousticness = image_analysis.get('acousticness', 0.5)
             tempo = image_analysis.get('tempo', 120)
-            cultural_vibe = image_analysis.get('cultural_vibe', 'global')
+            instrumentalness = image_analysis.get('instrumentalness', 0.2)
+            keywords = image_analysis.get('keywords', [])
+            themes = image_analysis.get('themes', [])
 
             excluded_ids = excluded_ids or []
+            cultural_vibe = image_analysis.get('cultural_vibe', 'global')
+            music_style = image_analysis.get('music_style', '')
 
-            print(f"\n{'='*80}")
-            print(f"[NEW ALGORITHM] Starting artist-centric recommendations")
-            print(f"[NEW ALGORITHM] Mood: {mood}, Energy: {energy:.2f}, Valence: {valence:.2f}")
-            print(f"[NEW ALGORITHM] Cultural vibe: {cultural_vibe}")
-            print(f"[NEW ALGORITHM] Excluding {len(excluded_ids)} tracks")
-            print(f"{'='*80}\n")
+            print(f"[SpotifyService] Getting recommendations with mood={mood}")
+            print(f"[SpotifyService] Audio Features - energy={energy:.2f}, valence={valence:.2f}, danceability={danceability:.2f}, acousticness={acousticness:.2f}, tempo={tempo}, instrumentalness={instrumentalness:.2f}")
+            print(f"[SpotifyService] Genres: {genres}, Themes: {themes}, Keywords: {keywords}")
+            print(f"[SpotifyService] Cultural vibe: {cultural_vibe}, Music style: {music_style}")
+            print(f"[SpotifyService] Excluding {len(excluded_ids)} previously returned tracks")
 
-            # Step 1: Normalize mood to our 9 categories
-            normalized_mood = self._normalize_mood(mood)
-            print(f"[Step 1] Normalized mood: '{mood}' → '{normalized_mood}'")
+            # Adjust tempo based on mood to ensure it makes sense
+            tempo = self._adjust_tempo_for_mood(tempo, mood, energy)
 
-            # Step 2: Get curated artists for this mood
-            english_artists = self.ENGLISH_ARTISTS.get(normalized_mood, self.ENGLISH_ARTISTS['happy'])
-            hindi_artists = self.HINDI_ARTISTS.get(normalized_mood, self.HINDI_ARTISTS['happy'])
+            # Pre-compute audio feature ranges so we have safe defaults even when seed lookup fails
+            energy_min = max(0.0, energy - 0.2)
+            energy_max = min(1.0, energy + 0.2)
+            valence_min = max(0.0, valence - 0.2)
+            valence_max = min(1.0, valence + 0.2)
+            danceability_min = max(0.0, danceability - 0.2)
+            danceability_max = min(1.0, danceability + 0.2)
+            acousticness_min = max(0.0, acousticness - 0.2)
+            acousticness_max = min(1.0, acousticness + 0.2)
+            instrumentalness_min = max(0.0, instrumentalness - 0.15)
+            instrumentalness_max = min(1.0, instrumentalness + 0.15)
+            tempo_min = max(40, tempo - 15)
+            tempo_max = min(200, tempo + 15)
 
-            print(f"[Step 2] English artists: {english_artists[:3]}... ({len(english_artists)} total)")
-            print(f"[Step 2] Hindi artists: {hindi_artists[:3]}... ({len(hindi_artists)} total)")
-
-            # Step 3: Get tracks from artists (60% recent + 40% top tracks)
-            all_tracks_with_metadata = []
-
-            # Process English artists
-            print(f"\n[Step 3] Fetching English tracks...")
-            for artist_name in english_artists:
-                artist_id = self._search_artist_by_name(artist_name, market='US')
-                if not artist_id:
-                    print(f"  ⚠️  Could not find artist: {artist_name}")
-                    continue
-
-                print(f"  ✓ Processing: {artist_name}")
-
-                # Get recent albums (60% of tracks)
-                recent_album_ids = self._get_artist_recent_albums(artist_id, market='US')
-                recent_tracks = self._get_tracks_from_albums(recent_album_ids, limit_per_album=2)
-                recent_tracks = recent_tracks[:self.TRACKS_PER_ARTIST_RECENT]
-
-                # Get top tracks (40% of tracks)
-                try:
-                    top_tracks_response = self.sp.artist_top_tracks(artist_id, country='US')
-                    top_tracks = top_tracks_response.get('tracks', [])[:self.TRACKS_PER_ARTIST_TOP]
-                except Exception as e:
-                    print(f"    Error getting top tracks: {e}")
-                    top_tracks = []
-
-                # Combine and mark with metadata
-                for track in recent_tracks:
-                    if track and track.get('id'):
-                        # Need to get full track object with album info
-                        try:
-                            full_track = self.sp.track(track['id'], market='US')
-                            full_track['_track_type'] = 'recent'
-                            full_track['_artist_name'] = artist_name
-                            full_track['_language'] = 'english'
-                            all_tracks_with_metadata.append(full_track)
-                        except:
-                            continue
-
-                for track in top_tracks:
-                    if track and track.get('id'):
-                        track['_track_type'] = 'top'
-                        track['_artist_name'] = artist_name
-                        track['_language'] = 'english'
-                        all_tracks_with_metadata.append(track)
-
-            # Process Hindi artists
-            print(f"\n[Step 3] Fetching Hindi tracks...")
-            for artist_name in hindi_artists:
-                artist_id = self._search_artist_by_name(artist_name, market='IN')
-                if not artist_id:
-                    print(f"  ⚠️  Could not find artist: {artist_name}")
-                    continue
-
-                print(f"  ✓ Processing: {artist_name}")
-
-                # Get recent albums (60%)
-                recent_album_ids = self._get_artist_recent_albums(artist_id, market='IN')
-                recent_tracks = self._get_tracks_from_albums(recent_album_ids, limit_per_album=2)
-                recent_tracks = recent_tracks[:self.TRACKS_PER_ARTIST_RECENT]
-
-                # Get top tracks (40%)
-                try:
-                    top_tracks_response = self.sp.artist_top_tracks(artist_id, country='IN')
-                    top_tracks = top_tracks_response.get('tracks', [])[:self.TRACKS_PER_ARTIST_TOP]
-                except Exception as e:
-                    print(f"    Error getting top tracks: {e}")
-                    top_tracks = []
-
-                # Combine and mark with metadata
-                for track in recent_tracks:
-                    if track and track.get('id'):
-                        try:
-                            full_track = self.sp.track(track['id'], market='IN')
-                            full_track['_track_type'] = 'recent'
-                            full_track['_artist_name'] = artist_name
-                            full_track['_language'] = 'hindi'
-                            all_tracks_with_metadata.append(full_track)
-                        except:
-                            continue
-
-                for track in top_tracks:
-                    if track and track.get('id'):
-                        track['_track_type'] = 'top'
-                        track['_artist_name'] = artist_name
-                        track['_language'] = 'hindi'
-                        all_tracks_with_metadata.append(track)
-
-            print(f"\n[Step 3] Total tracks collected: {len(all_tracks_with_metadata)}")
-
-            # Step 4: Get audio features and filter by vibe matching
-            print(f"\n[Step 4] Filtering by vibe matching (threshold: {self.VIBE_THRESHOLD})...")
-
-            track_ids = [t['id'] for t in all_tracks_with_metadata if t.get('id')]
-
-            # Batch get audio features (max 100 at a time)
-            all_audio_features = []
-            for i in range(0, len(track_ids), 100):
-                batch = track_ids[i:i+100]
-                try:
-                    features = self.sp.audio_features(batch)
-                    all_audio_features.extend(features)
-                except Exception as e:
-                    print(f"  Error getting audio features batch: {e}")
-                    all_audio_features.extend([None] * len(batch))
-
-            # Filter and score tracks
-            scored_tracks = []
-            for i, track in enumerate(all_tracks_with_metadata):
-                if i >= len(all_audio_features):
-                    break
-
-                features = all_audio_features[i]
-                if not features:
-                    continue
-
-                # Calculate vibe match score
-                vibe_score = self._calculate_vibe_match_score(
-                    features, energy, valence, danceability, acousticness, tempo
-                )
-
-                # Filter by strict threshold
-                if vibe_score < self.VIBE_THRESHOLD:
-                    continue
-
-                # Filter by popularity
-                popularity = track.get('popularity', 0)
-                if popularity < self.POPULARITY_MIN or popularity > self.POPULARITY_MAX:
-                    continue
-
-                # Filter by excluded IDs
-                if track['id'] in excluded_ids:
-                    continue
-
-                # Calculate recency bonus
-                release_date = track.get('album', {}).get('release_date', '')
-                recency_bonus = self._calculate_recency_bonus(release_date) if release_date else 0.5
-
-                # Calculate final score
-                final_score = (
-                    vibe_score * self.VIBE_WEIGHT +
-                    recency_bonus * self.RECENCY_WEIGHT +
-                    (popularity / 100) * self.POPULARITY_WEIGHT
-                )
-
-                track['_vibe_score'] = vibe_score
-                track['_recency_bonus'] = recency_bonus
-                track['_final_score'] = final_score
-                track['_audio_features'] = features
-
-                scored_tracks.append(track)
-
-            print(f"[Step 4] Tracks passing filters: {len(scored_tracks)}")
-
-            # Step 5: Sort by final score
-            scored_tracks.sort(key=lambda x: x['_final_score'], reverse=True)
-
-            # Step 6: Determine language mix
+            # Dynamically determine language mix based on image analysis
             english_count, hindi_count = self._determine_language_mix(image_analysis)
-            print(f"\n[Step 5] Language mix: {english_count} English, {hindi_count} Hindi")
 
-            # Step 7: Select final tracks with diversity
+            # Track sources for weighted scoring
+            # Strategy 1 (Playlists) = 0.8x weight - curated but less personalized
+            # Strategy 2 (Recommendations) = 1.0x weight - best match for audio features
+            # Strategy 3 (Search) = 0.6x weight - keyword-based, less precise
+            all_tracks = []
+
+            # Strategy 1: Get contextual playlists for the mood/genre/themes/keywords
+            mood_playlists = self._get_mood_playlists(mood, genres, themes, keywords)
+            playlist_tracks = []
+
+            for playlist_id in mood_playlists[:4]:  # Use top 4 playlists (curated + contextual)
+                try:
+                    playlist = self.sp.playlist_tracks(playlist_id, limit=20, offset=offset)
+                    if playlist and 'items' in playlist:
+                        for item in playlist['items']:
+                            if item['track'] and item['track']['id']:
+                                track = item['track']
+                                track['_source'] = 'playlist'
+                                track['_source_weight'] = 0.8
+                                playlist_tracks.append(track)
+                        print(f"[SpotifyService] Got {len(playlist['items'])} tracks from playlist")
+                except Exception as e:
+                    print(f"Playlist fetch error: {e}")
+                    continue
+
+            all_tracks.extend(playlist_tracks)
+
+            # Strategy 2: Use Spotify recommendations with seed tracks from popular artists
+            if len(all_tracks) < 20:
+                try:
+                    # Get seed tracks based on mood/genre
+                    seed_tracks = self._get_seed_tracks(mood, genres, offset)
+
+                    if seed_tracks:
+                        print(f"[SpotifyService] Using seed tracks: {[t['name'] for t in seed_tracks[:3]]}")
+                        seed_ids = [t['id'] for t in seed_tracks[:5]]
+
+                        print(f"[SpotifyService] Audio ranges - energy:[{energy_min:.2f}-{energy_max:.2f}], valence:[{valence_min:.2f}-{valence_max:.2f}], tempo:[{tempo_min}-{tempo_max}]")
+
+                        rec_results = self.sp.recommendations(
+                            seed_tracks=seed_ids,
+                            limit=20,
+                            target_energy=energy,
+                            min_energy=energy_min,
+                            max_energy=energy_max,
+                            target_valence=valence,
+                            min_valence=valence_min,
+                            max_valence=valence_max,
+                            target_danceability=danceability,
+                            min_danceability=danceability_min,
+                            max_danceability=danceability_max,
+                            target_acousticness=acousticness,
+                            min_acousticness=acousticness_min,
+                            max_acousticness=acousticness_max,
+                            target_tempo=tempo,
+                            min_tempo=tempo_min,
+                            max_tempo=tempo_max,
+                            target_instrumentalness=instrumentalness,
+                            min_instrumentalness=instrumentalness_min,
+                            max_instrumentalness=instrumentalness_max,
+                        )
+
+                        if rec_results and 'tracks' in rec_results:
+                            print(f"[SpotifyService] Got {len(rec_results['tracks'])} from recommendations")
+                            for track in rec_results['tracks']:
+                                track['_source'] = 'recommendations'
+                                track['_source_weight'] = 1.0  # Highest weight - best audio feature match
+                            all_tracks.extend(rec_results['tracks'])
+                except Exception as e:
+                    print(f"Recommendations error: {e}")
+
+            # Strategy 3: Search with better terms - separate English and Hindi
+            english_tracks = []
+            hindi_tracks = []
+
+            # Get English/International tracks
+            english_terms = self._get_smart_search_terms(mood, genres, themes, keywords, language='english')
+            search_offset = offset % 50
+
+            for term in english_terms[:3]:
+                try:
+                    # Removed year restriction to allow more diverse results
+                    query = f"{term}"
+                    results = self.sp.search(q=query, type='track', limit=15, offset=search_offset)
+                    if results['tracks']['items']:
+                        print(f"[SpotifyService] Found {len(results['tracks']['items'])} English tracks for '{query}'")
+                        for track in results['tracks']['items']:
+                            track['_source'] = 'search'
+                            track['_source_weight'] = 0.6  # Lower weight - keyword match only
+                        english_tracks.extend(results['tracks']['items'])
+                except Exception as e:
+                    print(f"Search error for term '{term}': {e}")
+
+            # Get Hindi/Indian tracks - Multi-strategy approach (same as English)
+            # Strategy 1: Hindi playlists (0.8x weight)
+            hindi_playlists = self._get_hindi_mood_playlists(mood, genres, themes, keywords)
+            playlist_hindi_tracks = []
+
+            for playlist_id in hindi_playlists[:4]:  # Use top 4 playlists
+                try:
+                    playlist = self.sp.playlist_tracks(playlist_id, limit=20, offset=offset)
+                    if playlist and 'items' in playlist:
+                        for item in playlist['items']:
+                            if item['track'] and item['track']['id']:
+                                track = item['track']
+                                track['_source'] = 'hindi_playlist'
+                                track['_source_weight'] = 0.8
+                                playlist_hindi_tracks.append(track)
+                        print(f"[SpotifyService] Got {len(playlist['items'])} tracks from Hindi playlist")
+                except Exception as e:
+                    print(f"Hindi playlist fetch error: {e}")
+                    continue
+
+            hindi_tracks.extend(playlist_hindi_tracks)
+
+            # Strategy 1b: Pull curated trending Hindi songs for freshness (0.9x weight)
+            trending_hindi_tracks = self._get_trending_hindi_tracks(
+                energy=energy,
+                valence=valence,
+                danceability=danceability,
+                acousticness=acousticness,
+                tempo=tempo,
+                offset=offset
+            )
+
+            if trending_hindi_tracks:
+                print(f"[SpotifyService] Added {len(trending_hindi_tracks)} Hindi tracks from 'Trending Now India'")
+                hindi_tracks.extend(trending_hindi_tracks)
+
+            # Strategy 2: Hindi Recommendations API (1.0x weight - highest)
+            hindi_recommendations = self._get_hindi_recommendations(
+                mood, genres, energy, valence, danceability, acousticness,
+                tempo, instrumentalness, offset,
+                energy_min, energy_max, valence_min, valence_max,
+                danceability_min, danceability_max, acousticness_min, acousticness_max,
+                tempo_min, tempo_max, instrumentalness_min, instrumentalness_max
+            )
+
+            for track in hindi_recommendations:
+                track['_source'] = 'hindi_recommendations'
+                track['_source_weight'] = 1.0  # Highest weight
+
+            hindi_tracks.extend(hindi_recommendations)
+            print(f"[SpotifyService] Added {len(hindi_recommendations)} Hindi tracks from Recommendations API")
+
+            # Strategy 3: Hindi Search API (0.6x weight)
+            hindi_search_terms = self._get_smart_search_terms(mood, genres, themes, keywords, language='hindi')
+
+            for term in hindi_search_terms[:3]:
+                try:
+                    query = f"{term}"
+                    results = self.sp.search(q=query, type='track', limit=15, offset=search_offset, market='IN')
+                    if results['tracks']['items']:
+                        print(f"[SpotifyService] Found {len(results['tracks']['items'])} Hindi tracks for '{query}'")
+                        for track in results['tracks']['items']:
+                            track['_source'] = 'hindi_search'
+                            track['_source_weight'] = 0.6  # Lower weight
+                        hindi_tracks.extend(results['tracks']['items'])
+                except Exception as e:
+                    print(f"Hindi search error for term '{term}': {e}")
+
+            print(f"[SpotifyService] Total Hindi tracks from all strategies: {len(hindi_tracks)}")
+
+            # Add both to all_tracks for processing
+            all_tracks.extend(english_tracks)
+            all_tracks.extend(hindi_tracks)
+
+            # Remove duplicates and filter for quality
+            seen_ids = set()
+            seen_artists = set()
+            unique_tracks = []
+
+            # Filter for high-quality tracks (lowered to include hidden gems)
+            MIN_POPULARITY = 25  # Minimum popularity score for quality (was 40, lowered for more variety)
+            MAX_POPULARITY = 95  # Maximum popularity to avoid only mainstream hits
+
+            for track in all_tracks:
+                if not track or not track.get('id'):
+                    continue
+
+                track_id = track['id']
+                popularity = track.get('popularity', 0)
+
+                # Skip if duplicate, previously returned, or low quality
+                if track_id in seen_ids or track_id in excluded_ids:
+                    continue
+
+                # Only include tracks with balanced popularity (not too low, not too high)
+                if popularity < MIN_POPULARITY or popularity > MAX_POPULARITY:
+                    continue
+
+                seen_ids.add(track_id)
+
+                # Add diversity score (prefer different artists)
+                artist_names = [artist['name'] for artist in track.get('artists', [])]
+                artist_key = tuple(sorted(artist_names))
+
+                # Penalize if we've seen this artist too many times
+                artist_count = seen_artists.count(artist_key) if hasattr(seen_artists, 'count') else 0
+                diversity_penalty = artist_count * 5  # Reduce score for repeated artists
+
+                # Apply weighted scoring based on source
+                source_weight = track.get('_source_weight', 0.5)  # Default if no source
+                base_score = popularity * source_weight
+
+                # Calculate semantic similarity boost
+                semantic_boost = self._calculate_semantic_similarity(track, keywords, themes, mood)
+
+                # Apply diversity penalty
+                final_score = base_score + semantic_boost - diversity_penalty
+
+                track['_score'] = final_score
+                track['_base_score'] = base_score
+                track['_semantic_boost'] = semantic_boost
+                track['_artist_key'] = artist_key
+                unique_tracks.append(track)
+
+            # Sort by final score (source_weight * popularity + semantic_boost - diversity penalty)
+            unique_tracks.sort(key=lambda x: x['_score'], reverse=True)
+
+            # Log source distribution and semantic matches
+            source_counts = {}
+            tracks_with_semantic_boost = 0
+            for track in unique_tracks:
+                source = track.get('_source', 'unknown')
+                source_counts[source] = source_counts.get(source, 0) + 1
+                if track.get('_semantic_boost', 0) > 0:
+                    tracks_with_semantic_boost += 1
+
+            print(f"[SpotifyService] Total unique quality tracks: {len(unique_tracks)}")
+            print(f"[SpotifyService] Source distribution: {source_counts}")
+            print(f"[SpotifyService] Tracks with semantic matches: {tracks_with_semantic_boost}/{len(unique_tracks)}")
+
+            # Separate tracks by language (heuristic: check if track/artist contains Hindi indicators)
+            english_pool = []
+            hindi_pool = []
+
+            for track in unique_tracks:
+                # Simple heuristic: check artist/album names for Hindi/Indian indicators
+                track_text = f"{track['name']} {' '.join([a['name'] for a in track['artists']])} {track['album']['name']}".lower()
+
+                # Check for Indian/Hindi indicators
+                is_indian = any(indicator in track_text for indicator in [
+                    'bollywood', 'hindi', 'punjabi', 'desi'
+                ])
+
+                if is_indian:
+                    hindi_pool.append(track)
+                else:
+                    english_pool.append(track)
+
+            # Create popularity buckets for distribution
+            # Target: 1 hidden gem (25-40), 3 moderate (40-70), 1 popular (70-85)
+            hidden_gems = [t for t in unique_tracks if 25 <= t.get('popularity', 0) <= 40]
+            moderate_hits = [t for t in unique_tracks if 40 < t.get('popularity', 0) <= 70]
+            popular_tracks = [t for t in unique_tracks if 70 < t.get('popularity', 0) <= 95]
+
+            print(f"[SpotifyService] Popularity distribution - Hidden gems: {len(hidden_gems)}, Moderate: {len(moderate_hits)}, Popular: {len(popular_tracks)}")
+
+            # Separate each bucket by language
+            english_pool = {'hidden': [], 'moderate': [], 'popular': []}
+            hindi_pool = {'hidden': [], 'moderate': [], 'popular': []}
+
+            for bucket_name, bucket_tracks in [('hidden', hidden_gems), ('moderate', moderate_hits), ('popular', popular_tracks)]:
+                for track in bucket_tracks:
+                    # Check if track is from trending Hindi playlists (most reliable indicator)
+                    is_from_hindi_playlist = track.get('_source') == 'trending_hindi_playlist'
+
+                    # Fallback: check artist/album names for Hindi/Indian indicators
+                    track_text = f"{track['name']} {' '.join([a['name'] for a in track['artists']])} {track['album']['name']}".lower()
+                    has_hindi_keywords = any(indicator in track_text for indicator in [
+                        'bollywood', 'hindi', 'punjabi', 'desi'
+                    ])
+
+                    # Mark as Hindi if from Hindi playlist OR has Hindi keywords
+                    if is_from_hindi_playlist or has_hindi_keywords:
+                        hindi_pool[bucket_name].append(track)
+                    else:
+                        english_pool[bucket_name].append(track)
+
+            print(f"[SpotifyService] English pools - Hidden: {len(english_pool['hidden'])}, Moderate: {len(english_pool['moderate'])}, Popular: {len(english_pool['popular'])}")
+            print(f"[SpotifyService] Hindi pools - Hidden: {len(hindi_pool['hidden'])}, Moderate: {len(hindi_pool['moderate'])}, Popular: {len(hindi_pool['popular'])}")
+
+            # Select songs with popularity distribution
             final_songs = []
-            artist_counts = {}
+            artists_used = {}
 
-            # Separate by language
-            english_pool = [t for t in scored_tracks if t.get('_language') == 'english']
-            hindi_pool = [t for t in scored_tracks if t.get('_language') == 'hindi']
+            # Strategy: For each language quota, select from different popularity buckets
+            # Try to get: 20% hidden, 60% moderate, 20% popular (roughly)
+            for pool, target_count, label in [(english_pool, english_count, 'English'), (hindi_pool, hindi_count, 'Hindi')]:
+                selected = 0
 
-            print(f"[Step 6] English pool: {len(english_pool)}, Hindi pool: {len(hindi_pool)}")
+                # Calculate target distribution for this language
+                # If target_count=3: try 1 moderate, 1 moderate, 1 popular (prioritize moderate)
+                # If target_count=2: try 1 moderate, 1 popular
+                # If target_count=4: try 1 hidden, 2 moderate, 1 popular
+                # If target_count=5: try 1 hidden, 3 moderate, 1 popular
 
-            # Select English tracks
-            for track in english_pool:
-                if len([s for s in final_songs if s.get('language_type') == 'English']) >= english_count:
-                    break
+                if target_count >= 4:
+                    bucket_targets = [('hidden', 1), ('moderate', target_count - 2), ('popular', 1)]
+                elif target_count == 3:
+                    bucket_targets = [('moderate', 2), ('popular', 1)]
+                elif target_count == 2:
+                    bucket_targets = [('moderate', 1), ('popular', 1)]
+                else:  # target_count == 1
+                    bucket_targets = [('moderate', 1)]
 
-                artist_name = track.get('_artist_name', 'Unknown')
-                if artist_counts.get(artist_name, 0) >= self.MAX_TRACKS_PER_ARTIST:
-                    continue
+                # Select from each bucket
+                for bucket_name, bucket_target in bucket_targets:
+                    bucket_selected = 0
+                    for track in pool[bucket_name]:
+                        if bucket_selected >= bucket_target or selected >= target_count:
+                            break
 
-                artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
+                        artist_key = track['_artist_key']
 
-                final_songs.append({
-                    'id': track['id'],
-                    'name': track['name'],
-                    'artist': ', '.join([a['name'] for a in track['artists']]),
-                    'album': track['album']['name'],
-                    'preview_url': track.get('preview_url'),
-                    'spotify_url': track['external_urls']['spotify'],
-                    'album_cover': track['album']['images'][0]['url'] if track['album']['images'] else None,
-                    'duration_ms': track['duration_ms'],
-                    'popularity': track.get('popularity', 0),
-                    'language_type': 'English',
-                    'vibe_score': round(track['_vibe_score'], 2),
-                    'recency_bonus': round(track['_recency_bonus'], 2),
-                    'final_score': round(track['_final_score'], 2)
-                })
+                        # Limit to max 2 songs from the same artist
+                        if artists_used.get(artist_key, 0) >= 2:
+                            continue
 
-            # Select Hindi tracks
-            for track in hindi_pool:
-                if len([s for s in final_songs if s.get('language_type') == 'Hindi']) >= hindi_count:
-                    break
+                        # Skip if already added
+                        if any(s['id'] == track['id'] for s in final_songs):
+                            continue
 
-                artist_name = track.get('_artist_name', 'Unknown')
-                if artist_counts.get(artist_name, 0) >= self.MAX_TRACKS_PER_ARTIST:
-                    continue
+                        artists_used[artist_key] = artists_used.get(artist_key, 0) + 1
 
-                artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
+                        final_songs.append({
+                            'id': track['id'],
+                            'name': track['name'],
+                            'artist': ', '.join([artist['name'] for artist in track['artists']]),
+                            'album': track['album']['name'],
+                            'preview_url': track.get('preview_url'),
+                            'spotify_url': track['external_urls']['spotify'],
+                            'album_cover': track['album']['images'][0]['url'] if track['album']['images'] else None,
+                            'duration_ms': track['duration_ms'],
+                            'popularity': track.get('popularity', 0),
+                            'language_type': label,
+                            'popularity_bucket': bucket_name  # Track which bucket this came from
+                        })
+                        selected += 1
+                        bucket_selected += 1
 
-                final_songs.append({
-                    'id': track['id'],
-                    'name': track['name'],
-                    'artist': ', '.join([a['name'] for a in track['artists']]),
-                    'album': track['album']['name'],
-                    'preview_url': track.get('preview_url'),
-                    'spotify_url': track['external_urls']['spotify'],
-                    'album_cover': track['album']['images'][0]['url'] if track['album']['images'] else None,
-                    'duration_ms': track['duration_ms'],
-                    'popularity': track.get('popularity', 0),
-                    'language_type': 'Hindi',
-                    'vibe_score': round(track['_vibe_score'], 2),
-                    'recency_bonus': round(track['_recency_bonus'], 2),
-                    'final_score': round(track['_final_score'], 2)
-                })
+                print(f"[SpotifyService] Selected {selected} {label} songs")
 
-            # Fill remaining slots if needed
+            # If we don't have 5 songs, fill from any pool
             if len(final_songs) < 5:
-                print(f"\n[Step 7] Only {len(final_songs)}/5 songs, filling remaining slots...")
-                remaining_tracks = [t for t in scored_tracks if t['id'] not in [s['id'] for s in final_songs]]
-
-                for track in remaining_tracks:
+                print("[SpotifyService] Filling remaining slots with best available")
+                for track in unique_tracks:
                     if len(final_songs) >= 5:
                         break
 
-                    artist_name = track.get('_artist_name', 'Unknown')
-                    if artist_counts.get(artist_name, 0) >= self.MAX_TRACKS_PER_ARTIST:
+                    # Skip if already added
+                    if any(s['id'] == track['id'] for s in final_songs):
                         continue
-
-                    artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
 
                     final_songs.append({
                         'id': track['id'],
                         'name': track['name'],
-                        'artist': ', '.join([a['name'] for a in track['artists']]),
+                        'artist': ', '.join([artist['name'] for artist in track['artists']]),
                         'album': track['album']['name'],
                         'preview_url': track.get('preview_url'),
                         'spotify_url': track['external_urls']['spotify'],
                         'album_cover': track['album']['images'][0]['url'] if track['album']['images'] else None,
                         'duration_ms': track['duration_ms'],
                         'popularity': track.get('popularity', 0),
-                        'language_type': track.get('_language', 'Mixed').title(),
-                        'vibe_score': round(track['_vibe_score'], 2),
-                        'recency_bonus': round(track['_recency_bonus'], 2),
-                        'final_score': round(track['_final_score'], 2)
+                        'language_type': 'Mixed'
                     })
 
-            # Final summary
-            print(f"\n{'='*80}")
-            print(f"[FINAL] Returning {len(final_songs)} songs")
-            for i, song in enumerate(final_songs, 1):
-                print(f"  {i}. [{song['language_type']}] {song['name']} - {song['artist']}")
-                print(f"     Vibe: {song['vibe_score']}, Recency: {song['recency_bonus']}, Score: {song['final_score']}")
-            print(f"{'='*80}\n")
+            # Log final popularity distribution
+            bucket_counts = {}
+            for song in final_songs:
+                bucket = song.get('popularity_bucket', 'unknown')
+                bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
 
+            print(f"[SpotifyService] Final popularity distribution: {bucket_counts}")
+            print(f"[SpotifyService] Returning {len(final_songs)} diverse songs with language mix")
             return final_songs
 
         except Exception as e:
-            print(f"\n[ERROR] Exception in get_song_recommendations: {e}")
+            print(f"Error getting song recommendations: {e}")
             import traceback
             traceback.print_exc()
             return []
