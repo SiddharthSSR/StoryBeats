@@ -223,9 +223,7 @@ class SpotifyService:
 
                 # Check for Indian/Hindi indicators
                 is_indian = any(indicator in track_text for indicator in [
-                    'bollywood', 'hindi', 'punjabi', 'desi', 'arijit', 'badshah',
-                    'atif', 'shreya', 'neha', 'armaan', 'pritam', 'ar rahman',
-                    'mohit chauhan', 'sunidhi', 'sonu nigam', 'kumar sanu'
+                    'bollywood', 'hindi', 'punjabi', 'desi'
                 ])
 
                 if is_indian:
