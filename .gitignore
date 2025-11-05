@@ -87,3 +87,8 @@ out/
 # Production
 /backend/uploads/*
 !/backend/uploads/.gitkeep
+
+# Project management (not for public repo)
+TODO.md
+NOTES.md
+.todo
