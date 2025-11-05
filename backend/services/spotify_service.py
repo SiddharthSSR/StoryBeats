@@ -6,6 +6,8 @@ from config import Config
 class SpotifyService:
     """Service for interacting with Spotify API"""
 
+    TRENDING_NOW_INDIA_PLAYLIST_NAME = "Trending Now India"
+
     def __init__(self):
         """Initialize Spotify client"""
         self.client_credentials = SpotifyClientCredentials(
@@ -355,6 +357,20 @@ class SpotifyService:
                     continue
 
             hindi_tracks.extend(playlist_hindi_tracks)
+
+            # Strategy 1b: Pull curated trending Hindi songs for freshness (0.9x weight)
+            trending_hindi_tracks = self._get_trending_hindi_tracks(
+                energy=energy,
+                valence=valence,
+                danceability=danceability,
+                acousticness=acousticness,
+                tempo=tempo,
+                offset=offset
+            )
+
+            if trending_hindi_tracks:
+                print(f"[SpotifyService] Added {len(trending_hindi_tracks)} Hindi tracks from 'Trending Now India'")
+                hindi_tracks.extend(trending_hindi_tracks)
 
             # Strategy 2: Hindi Recommendations API (1.0x weight - highest)
             hindi_recommendations = self._get_hindi_recommendations(
@@ -742,6 +758,19 @@ class SpotifyService:
         print(f"[SpotifyService] Found {len(playlist_ids)} Hindi playlists for mood '{mood}'")
         return playlist_ids[:6]  # Return top 6 playlists
 
+    def _find_playlist_by_name(self, name, market='IN', limit=5):
+        """Try to locate a Spotify playlist by its display name."""
+        try:
+            results = self.sp.search(q=name, type='playlist', limit=limit, market=market)
+            if results and results.get('playlists', {}).get('items'):
+                for playlist in results['playlists']['items']:
+                    playlist_name = playlist.get('name', '').strip().lower()
+                    if playlist_name == name.lower() and playlist.get('id'):
+                        return playlist['id']
+        except Exception as exc:
+            print(f"[SpotifyService] Failed to locate playlist '{name}': {exc}")
+        return None
+
     def _get_trending_hindi_tracks(self, energy, valence, danceability, acousticness, tempo, offset=0):
         """
         Get trending Hindi songs from popular playlists and filter by audio features
@@ -761,18 +790,36 @@ class SpotifyService:
                 'trending hindi songs',
                 'latest bollywood',
                 'indie hindi',
-                'arijit singh'
+                'hindi chart toppers',
+                self.TRENDING_NOW_INDIA_PLAYLIST_NAME
             ]
 
             playlist_ids = []
-            for term in search_terms[:3]:  # Use top 3 search terms
+
+            # Always try to include Spotify's "Trending Now India" playlist if available
+            trending_now_playlist_id = self._find_playlist_by_name(self.TRENDING_NOW_INDIA_PLAYLIST_NAME)
+            if trending_now_playlist_id:
+                playlist_ids.append(trending_now_playlist_id)
+                print("[SpotifyService] Added 'Trending Now India' playlist via direct lookup")
+
+            for term in search_terms[:5]:  # Use top search terms, including trending
                 try:
-                    results = self.sp.search(q=term, type='playlist', limit=2, market='IN')
+                    results = self.sp.search(q=term, type='playlist', limit=3, market='IN')
                     if results and 'playlists' in results and results['playlists']['items']:
                         for playlist in results['playlists']['items']:
-                            if playlist and playlist.get('id'):
-                                playlist_ids.append(playlist['id'])
-                                print(f"[SpotifyService] Found Hindi playlist: {playlist.get('name', 'Unknown')}")
+                            if not playlist or not playlist.get('id'):
+                                continue
+
+                            playlist_id = playlist['id']
+                            playlist_name = playlist.get('name', 'Unknown')
+
+                            # Prioritize exact match for Trending Now India
+                            if playlist_id not in playlist_ids:
+                                playlist_ids.append(playlist_id)
+                                print(f"[SpotifyService] Found Hindi playlist: {playlist_name}")
+
+                            if playlist_name.strip().lower() == self.TRENDING_NOW_INDIA_PLAYLIST_NAME.lower():
+                                print("[SpotifyService] Confirmed 'Trending Now India' playlist from search")
                 except Exception as e:
                     print(f"[SpotifyService] Error searching for Hindi playlist with '{term}': {e}")
                     continue
@@ -781,14 +828,25 @@ class SpotifyService:
                 print("[SpotifyService] No Hindi playlists found")
                 return []
 
+            # Preserve order but remove duplicates to avoid redundant API calls
+            unique_playlist_ids = []
+            for playlist_id in playlist_ids:
+                if playlist_id not in unique_playlist_ids:
+                    unique_playlist_ids.append(playlist_id)
+
+            playlist_ids = unique_playlist_ids
+
             # Fetch tracks from found playlists
-            for playlist_id in playlist_ids[:3]:  # Use top 3 playlists
+            for playlist_id in playlist_ids[:4]:  # Use top playlists with trending bias
                 try:
                     playlist = self.sp.playlist_tracks(playlist_id, limit=30, offset=offset % 50)
                     if playlist and 'items' in playlist:
                         for item in playlist['items']:
                             if item['track'] and item['track']['id']:
-                                hindi_tracks.append(item['track'])
+                                track = item['track']
+                                track['_source'] = 'trending_hindi_playlist'
+                                track['_source_weight'] = 0.9  # Slightly below recommendations but higher than generic playlists
+                                hindi_tracks.append(track)
                 except Exception as e:
                     print(f"[SpotifyService] Error fetching tracks from playlist {playlist_id}: {e}")
                     continue
@@ -847,14 +905,15 @@ class SpotifyService:
             # Sort by vibe match score
             matched_tracks.sort(key=lambda x: x['_vibe_match_score'], reverse=True)
 
-            print(f"[SpotifyService] Matched {len(matched_tracks)} Hindi tracks by vibe (threshold: 0.6)")
+            top_matches = matched_tracks[:30]
+            print(f"[SpotifyService] Matched {len(matched_tracks)} Hindi tracks by vibe (threshold: 0.6), using top {len(top_matches)}")
 
-            return matched_tracks
+            return top_matches
 
         except Exception as e:
             print(f"[SpotifyService] Error getting audio features for Hindi tracks: {e}")
             # Fallback: return tracks without filtering
-            return hindi_tracks[:20]
+            return hindi_tracks[:30]
 
     def _get_seed_tracks(self, mood, genres, offset):
         """Get seed tracks for recommendations"""
@@ -942,9 +1001,9 @@ class SpotifyService:
             hindi_queries = [
                 f"bollywood {mood}",
                 f"hindi {mood}",
-                f"arijit singh {mood}",
-                "pritam bollywood",
-                "ar rahman",
+                "bollywood chartbusters",
+                "trending hindi songs",
+                "indie hindi hits",
             ]
 
             # Pick a search query based on mood/genre
@@ -1069,16 +1128,16 @@ class SpotifyService:
         # Mood-based terms for Indian music (refined for better vibe matching)
         mood_terms = {
             'calm': ['peaceful hindi', 'sufi calm', 'acoustic hindi', 'indie hindi chill'],
-            'peaceful': ['sufi', 'meditation hindi', 'peaceful bollywood', 'rahat fateh ali'],
+            'peaceful': ['sufi', 'meditation hindi', 'peaceful bollywood', 'sufi qawwali classics'],
             'relaxed': ['chill hindi', 'indie hindi', 'lo-fi hindi', 'mellow bollywood'],
             'happy': ['feel good bollywood', 'upbeat hindi', 'happy indie hindi'],  # Removed party terms
-            'joyful': ['romantic hindi', 'melodious bollywood', 'arijit singh romantic'],  # More melodious, less party
-            'dreamy': ['sufi romantic', 'ethereal hindi', 'romantic ballad hindi', 'mohit chauhan'],  # New: for dreamy moods
+            'joyful': ['romantic hindi', 'melodious bollywood', 'soothing hindi love'],  # More melodious, less party
+            'dreamy': ['sufi romantic', 'ethereal hindi', 'romantic ballad hindi', 'soothing hindi vocals'],  # New: for dreamy moods
             'energetic': ['punjabi bhangra', 'high energy hindi', 'gym workout hindi'],
             'confident': ['desi hip-hop', 'rap hindi', 'urban desi', 'hip-hop hindi'],  # More hip-hop focused
-            'melancholic': ['sad hindi songs', 'emotional bollywood', 'heartbreak hindi', 'arijit singh sad'],
+            'melancholic': ['sad hindi songs', 'emotional bollywood', 'heartbreak hindi', 'soulful hindi ballads'],
             'nostalgic': ['90s bollywood', 'retro hindi', 'classic hindi songs', 'old is gold hindi'],
-            'romantic': ['romantic hindi', 'love songs bollywood', 'sufi romantic', 'atif aslam'],
+            'romantic': ['romantic hindi', 'love songs bollywood', 'sufi romantic', 'hindi love ballads'],
             'adventurous': ['road trip hindi', 'travel playlist hindi', 'uplifting bollywood'],
             'reflective': ['thoughtful hindi', 'indie hindi acoustic', 'sufi', 'meaningful lyrics hindi'],  # New: for reflective moods
             'serenity': ['peaceful sufi', 'calm hindi', 'meditation bollywood', 'ambient hindi'],  # New: for serene moods
@@ -1127,20 +1186,20 @@ class SpotifyService:
         # Add mood-appropriate Indian artists (more selective)
         # Only add artists that match the specific mood
         if any(x in mood_lower for x in ['romantic', 'love', 'dreamy', 'joyful']):
-            terms.append('arijit singh romantic')
-            terms.append('atif aslam')
+            terms.append('romantic hindi ballad')
+            terms.append('soulful bollywood love')
         elif any(x in mood_lower for x in ['calm', 'peaceful', 'serene', 'reflect']):
             terms.append('sufi playlist')
-            terms.append('mohit chauhan peaceful')
+            terms.append('soothing hindi vocals')
         elif any(x in mood_lower for x in ['sad', 'melanchol', 'emotional']):
-            terms.append('arijit singh sad')
+            terms.append('heartbreak hindi songs')
             terms.append('emotional ballad hindi')
         elif any(x in mood_lower for x in ['energetic', 'party', 'hype']):
-            terms.append('badshah diljit party')
+            terms.append('punjabi party hits')
             terms.append('punjabi workout')
         elif any(x in mood_lower for x in ['confident', 'swagger', 'boss']):
             terms.append('desi rap')
-            terms.append('raftaar hip-hop')
+            terms.append('desi hip-hop hits')
         elif any(x in mood_lower for x in ['nostalgic', 'retro', 'classic']):
             terms.append('90s evergreen hindi')
             terms.append('retro bollywood classics')

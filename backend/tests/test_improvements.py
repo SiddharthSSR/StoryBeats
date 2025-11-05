@@ -69,7 +69,7 @@ def test_image_analysis(image_path):
 
         # Detect language (simple heuristic)
         song_text = f"{name} {artists}".lower()
-        is_hindi = any(ind in song_text for ind in ['bollywood', 'hindi', 'punjabi', 'desi', 'arijit', 'pritam', 'ar rahman'])
+        is_hindi = any(ind in song_text for ind in ['bollywood', 'hindi', 'punjabi', 'desi', 'hindustani', 'ghazal'])
 
         if is_hindi:
             language_counts['Hindi'] += 1
