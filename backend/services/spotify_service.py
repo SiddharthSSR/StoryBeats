@@ -532,6 +532,129 @@ class SpotifyService:
         }
         return mood_features.get(normalized_mood, mood_features['happy'])
 
+    def _enhance_audio_features(self, track, normalized_mood, language):
+        """
+        Enhanced audio feature estimation using track metadata
+
+        Args:
+            track: Track object with metadata
+            normalized_mood: Normalized mood category
+            language: 'english' or 'hindi'
+
+        Returns:
+            dict: Enhanced audio features
+        """
+        # Start with mood-based baseline
+        features = self._estimate_audio_features_from_mood(normalized_mood).copy()
+
+        # Extract metadata
+        artist_name = track.get('_artist_name', '').lower()
+        track_name = track.get('name', '').lower()
+        album_name = track.get('album', {}).get('name', '').lower()
+        release_date = track.get('album', {}).get('release_date', '')
+
+        # === ENGLISH ARTIST PATTERNS ===
+        if language == 'english':
+            # Indie/Acoustic artists
+            if any(word in artist_name for word in ['bon iver', 'novo amor', 'phoebe', 'cigarettes after sex']):
+                features['acousticness'] = min(0.9, features['acousticness'] + 0.3)
+                features['energy'] = max(0.2, features['energy'] - 0.2)
+                features['danceability'] = max(0.2, features['danceability'] - 0.2)
+
+            # Electronic/Synth artists
+            elif any(word in artist_name for word in ['m83', 'odesza', 'beach house', 'tame impala', 'mgmt']):
+                features['energy'] = min(0.9, features['energy'] + 0.1)
+                features['acousticness'] = max(0.1, features['acousticness'] - 0.3)
+                features['tempo'] = min(140, features['tempo'] + 10)
+
+            # Hip-hop/R&B artists (moody category)
+            elif any(word in artist_name for word in ['frank ocean', 'don toliver', 'travis scott', 'sza', 'weeknd', 'bryson']):
+                features['energy'] = max(0.4, min(0.7, features['energy']))
+                features['danceability'] = min(0.8, features['danceability'] + 0.1)
+                features['tempo'] = max(85, min(115, features['tempo']))
+
+            # Indie rock/alternative
+            elif any(word in artist_name for word in ['arctic monkeys', 'the strokes', 'phoenix', 'two door']):
+                features['energy'] = min(0.85, features['energy'] + 0.15)
+                features['acousticness'] = max(0.15, features['acousticness'] - 0.2)
+                features['tempo'] = min(130, features['tempo'] + 5)
+
+        # === HINDI ARTIST PATTERNS ===
+        elif language == 'hindi':
+            # Bollywood romantic singers
+            if any(word in artist_name for word in ['arijit', 'atif', 'shreya', 'armaan', 'jubin']):
+                features['valence'] = min(0.8, features['valence'] + 0.1)
+                features['acousticness'] = min(0.7, features['acousticness'] + 0.2)
+                features['energy'] = max(0.3, min(0.6, features['energy']))
+                features['tempo'] = max(80, min(110, features['tempo']))
+
+            # Punjabi/Hip-hop artists
+            elif any(word in artist_name for word in ['badshah', 'divine', 'raftaar', 'diljit', 'guru randhawa', 'seedhe maut']):
+                features['energy'] = min(0.95, features['energy'] + 0.2)
+                features['danceability'] = min(0.95, features['danceability'] + 0.2)
+                features['tempo'] = min(145, features['tempo'] + 15)
+                features['acousticness'] = max(0.05, features['acousticness'] - 0.3)
+
+            # Indie/Singer-songwriter (Prateek, Anuv, etc.)
+            elif any(word in artist_name for word in ['prateek', 'anuv', 'raghav', 'when chai met toast', 'local train', 'lifafa']):
+                features['acousticness'] = min(0.85, features['acousticness'] + 0.25)
+                features['energy'] = max(0.25, features['energy'] - 0.15)
+                features['valence'] = max(0.4, min(0.7, features['valence']))
+                features['tempo'] = max(75, min(105, features['tempo']))
+
+            # Electronic/Producer (Ritviz, Nucleya, etc.)
+            elif any(word in artist_name for word in ['ritviz', 'nucleya', 'sez on the beat', 'dropped out']):
+                features['energy'] = min(0.95, features['energy'] + 0.25)
+                features['danceability'] = min(0.95, features['danceability'] + 0.25)
+                features['acousticness'] = max(0.05, features['acousticness'] - 0.4)
+                features['tempo'] = min(150, features['tempo'] + 20)
+
+            # Classical/Sufi influenced
+            elif any(word in artist_name for word in ['a.r. rahman', 'hariharan', 'shaan']):
+                features['acousticness'] = min(0.8, features['acousticness'] + 0.2)
+                features['energy'] = max(0.3, features['energy'] - 0.1)
+                features['tempo'] = max(70, min(100, features['tempo']))
+
+        # === TRACK NAME PATTERNS ===
+        # Remix/DJ versions
+        if any(word in track_name or word in album_name for word in ['remix', 'mix', 'edit', 'version']):
+            features['energy'] = min(0.95, features['energy'] + 0.15)
+            features['danceability'] = min(0.95, features['danceability'] + 0.15)
+            features['tempo'] = min(145, features['tempo'] + 10)
+
+        # Acoustic/Unplugged versions
+        elif any(word in track_name or word in album_name for word in ['acoustic', 'unplugged', 'stripped', 'piano']):
+            features['acousticness'] = min(0.95, features['acousticness'] + 0.3)
+            features['energy'] = max(0.2, features['energy'] - 0.25)
+
+        # Live versions
+        elif any(word in track_name or word in album_name for word in ['live', 'session']):
+            features['acousticness'] = min(0.8, features['acousticness'] + 0.15)
+
+        # === RELEASE YEAR ADJUSTMENTS ===
+        if release_date:
+            try:
+                year = int(release_date[:4])
+                # Newer songs tend to have more production
+                if year >= 2023:
+                    features['energy'] = min(0.95, features['energy'] + 0.05)
+                elif year >= 2020:
+                    features['energy'] = min(0.9, features['energy'] + 0.03)
+                # Older songs might be more acoustic
+                elif year < 2010:
+                    features['acousticness'] = min(0.85, features['acousticness'] + 0.1)
+            except:
+                pass
+
+        # Ensure values stay in valid range [0.0, 1.0]
+        for key in ['energy', 'valence', 'danceability', 'acousticness']:
+            features[key] = max(0.0, min(1.0, features[key]))
+
+        # Tempo should be reasonable
+        features['tempo'] = max(60, min(180, features['tempo']))
+
+        return features
+
     def get_song_recommendations(self, image_analysis, offset=0, excluded_ids=None):
         """
         Get song recommendations using Artist-Centric Algorithm with Recency
@@ -708,13 +831,14 @@ class SpotifyService:
                 except Exception as e:
                     print(f"  Error getting audio features batch {i//50 + 1}: {str(e)[:100]}")
                     audio_features_working = False
-                    # Use estimated features based on artist's mood category
+                    # Use enhanced estimated features based on track metadata
                     for j, track in enumerate(all_tracks_with_metadata[i:i+50]):
-                        estimated = self._estimate_audio_features_from_mood(normalized_mood)
+                        language = track.get('_language', 'english')
+                        estimated = self._enhance_audio_features(track, normalized_mood, language)
                         all_audio_features.append(estimated)
 
             if not audio_features_working:
-                print(f"  ⚠️  Audio features API unavailable, using estimated features based on mood")
+                print(f"  ⚠️  Audio features API unavailable, using enhanced estimates (artist patterns + metadata)")
 
             # Adjust vibe threshold based on whether we're using real or estimated features
             effective_vibe_threshold = 0.5 if not audio_features_working else self.VIBE_THRESHOLD
