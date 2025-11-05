@@ -1,5 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
 import os
 from dotenv import load_dotenv
@@ -12,6 +14,15 @@ from config import Config
 load_dotenv()
 
 app = Flask(__name__)
+
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://",
+    strategy="fixed-window"
+)
 
 # CORS configuration for production
 ALLOWED_ORIGINS = [
@@ -60,6 +71,7 @@ def health_check():
 
 
 @app.route('/api/analyze', methods=['POST'])
+@limiter.limit("5 per minute")  # Strict limit: max 5 uploads per minute
 def analyze_photo():
     """
     Main endpoint to analyze a photo and get song recommendations
@@ -145,6 +157,7 @@ def spotify_callback():
 
 
 @app.route('/api/more-songs', methods=['POST'])
+@limiter.limit("10 per minute")  # Allow more frequent requests for getting more songs
 def get_more_songs():
     """
     Get more song recommendations based on previous analysis
