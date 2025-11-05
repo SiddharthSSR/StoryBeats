@@ -97,6 +97,15 @@
   gap: 1.5rem;
 }
 
+.no-songs {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
 .song-card {
   background: var(--surface);
   border-radius: 12px;
