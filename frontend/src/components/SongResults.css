@@ -111,7 +111,7 @@
   border-radius: 12px;
   padding: 1.5rem;
   display: grid;
-  grid-template-columns: auto auto 1fr auto;
+  grid-template-columns: auto auto 1fr auto auto;
   gap: 1.5rem;
   align-items: center;
   border: 1px solid var(--border);
@@ -258,6 +258,81 @@
   transform: translateY(-2px);
 }
 
+/* Song actions container (feedback + spotify link) */
+.song-actions {
+  display: flex;
+  flex-direction: row;  /* Changed from column to row for horizontal layout */
+  gap: 1rem;            /* Space between feedback buttons and spotify link */
+  align-items: center;  /* Vertically center items */
+}
+
+/* Feedback buttons */
+.feedback-buttons {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.feedback-btn {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-secondary);
+}
+
+.feedback-icon {
+  width: 18px;
+  height: 18px;
+  transition: all 0.2s ease;
+}
+
+.feedback-btn:hover {
+  transform: scale(1.1);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.feedback-btn.like-btn:hover:not(.active) {
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.feedback-btn.dislike-btn:hover:not(.active) {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.feedback-btn.active {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  transform: scale(1.05);
+  color: white;
+}
+
+.feedback-btn.like-btn.active {
+  background: #10b981;
+  border-color: #10b981;
+  color: white;
+}
+
+.feedback-btn.dislike-btn.active {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: white;
+}
+
+.feedback-btn:active {
+  transform: scale(0.95);
+}
+
 @media (max-width: 768px) {
   .song-card {
     grid-template-columns: 1fr;
@@ -303,5 +378,30 @@
   .reset-button {
     width: 100%;
     min-width: unset;
+  }
+
+  .song-actions {
+    flex-direction: column;  /* Stack vertically on mobile for better layout */
+    align-items: center;
+    margin: 1rem 0;
+    gap: 0.75rem;
+  }
+
+  .feedback-buttons {
+    justify-content: center;
+  }
+
+  .feedback-btn {
+    width: 50px;
+    height: 50px;
+  }
+
+  .feedback-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .spotify-link {
+    width: 100%;
   }
 }

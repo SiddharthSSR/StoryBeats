@@ -1,6 +1,6 @@
 import './SongResults.css'
 
-function SongResults({ analysis, songs, onReset, onGetMore, loadingMore }) {
+function SongResults({ analysis, songs, onReset, onGetMore, loadingMore, onFeedback, feedback }) {
   const safeAnalysis = analysis || {}
   const safeSongs = Array.isArray(songs) ? songs : []
 
@@ -80,16 +80,58 @@ function SongResults({ analysis, songs, onReset, onGetMore, loadingMore }) {
                     Your browser does not support the audio element.
                   </audio>
                 )}
-                {song.spotify_url && (
-                  <a
-                    href={song.spotify_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="spotify-link"
-                  >
-                    Open in Spotify
-                  </a>
-                )}
+                <div className="song-actions">
+                  {onFeedback && (
+                    <div className="feedback-buttons">
+                      <button
+                        className={`feedback-btn like-btn ${feedback[song.id] === 1 ? 'active' : ''}`}
+                        onClick={() => onFeedback(song, 1)}
+                        title="Like this song"
+                        aria-label="Like"
+                      >
+                        <svg
+                          className="feedback-icon"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
+                        </svg>
+                      </button>
+                      <button
+                        className={`feedback-btn dislike-btn ${feedback[song.id] === -1 ? 'active' : ''}`}
+                        onClick={() => onFeedback(song, -1)}
+                        title="Dislike this song"
+                        aria-label="Dislike"
+                      >
+                        <svg
+                          className="feedback-icon"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                  {song.spotify_url && (
+                    <a
+                      href={song.spotify_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="spotify-link"
+                    >
+                      Open in Spotify
+                    </a>
+                  )}
+                </div>
               </div>
             ))}
           </div>

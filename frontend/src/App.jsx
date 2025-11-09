@@ -15,6 +15,7 @@ function App() {
   const [error, setError] = useState(null)
   const [offset, setOffset] = useState(5)
   const [sessionId, setSessionId] = useState(null)
+  const [feedback, setFeedback] = useState({}) // Track user feedback for each song
 
   const handlePhotoUpload = async (file) => {
     setLoading(true)
@@ -22,6 +23,7 @@ function App() {
     setResults(null)
     setOffset(5) // Reset offset
     setSessionId(null) // Reset session
+    setFeedback({}) // Reset feedback
 
     const formData = new FormData()
     formData.append('photo', file)
@@ -86,11 +88,49 @@ function App() {
     }
   }
 
+  const handleFeedback = async (song, feedbackValue) => {
+    if (!sessionId) {
+      console.error('No session ID available')
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          song_id: song.id,
+          song_name: song.name,
+          artist_name: song.artist,
+          feedback: feedbackValue, // 1 for like, -1 for dislike
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Update local feedback state
+        setFeedback((prev) => ({
+          ...prev,
+          [song.id]: feedbackValue,
+        }))
+      } else {
+        console.error('Failed to submit feedback:', data.error)
+      }
+    } catch (err) {
+      console.error('Network error submitting feedback:', err)
+    }
+  }
+
   const handleReset = () => {
     setResults(null)
     setError(null)
     setOffset(5)
     setSessionId(null)
+    setFeedback({})
   }
 
   return (
@@ -119,6 +159,8 @@ function App() {
             onReset={handleReset}
             onGetMore={handleGetMoreSongs}
             loadingMore={loadingMore}
+            onFeedback={handleFeedback}
+            feedback={feedback}
           />
         )}
       </main>

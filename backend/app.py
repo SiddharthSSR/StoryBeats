@@ -12,7 +12,10 @@ from pillow_heif import register_heif_opener
 
 from services.image_analyzer import ImageAnalyzer
 from services.spotify_service import SpotifyService
+from services.feedback_store import get_feedback_store
+from services.verify_llm import get_verify_llm
 from config import Config, validate_config
+import threading
 
 # Register HEIF opener with Pillow to support .heic files
 register_heif_opener()
@@ -69,6 +72,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # Initialize services
 image_analyzer = ImageAnalyzer()
 spotify_service = SpotifyService()
+feedback_store = get_feedback_store()
+verify_llm = get_verify_llm()
 
 # Track returned songs per session to avoid duplicates
 # Structure: {session_id: {'songs': [song_ids], 'expires_at': datetime}}
@@ -103,6 +108,54 @@ def cleanup_expired_sessions():
         print(f"[Cleanup] Removed {len(expired_sessions)} expired sessions")
 
     return len(expired_sessions)
+
+
+def background_reranking_task(session_id, image_path, all_songs, analysis):
+    """
+    Background task to rerank songs using LLM verification
+
+    This runs in a separate thread after returning initial results to user.
+    Reranked results are stored and used for subsequent "load more" requests.
+
+    Args:
+        session_id: Session ID
+        image_path: Path to the saved image file
+        all_songs: All 30 cached songs to rerank
+        analysis: Original image analysis
+    """
+    try:
+        print(f"\n[BACKGROUND RERANKING] Starting for session {session_id[:8]}...")
+
+        # Verify and rerank songs using LLM
+        reranked_songs = verify_llm.verify_and_rerank(
+            image_path=image_path,
+            songs=all_songs,
+            original_analysis=analysis
+        )
+
+        # Store reranked results in database
+        feedback_store.store_reranked_results(
+            session_id=session_id,
+            reranked_songs=reranked_songs,
+            original_songs=all_songs
+        )
+
+        # Update session cache with reranked songs
+        if session_id in session_songs:
+            session_songs[session_id]['all_songs'] = reranked_songs
+            session_songs[session_id]['reranked'] = True
+            print(f"[BACKGROUND RERANKING] ✅ Completed for session {session_id[:8]}")
+
+        # Clean up image file
+        if os.path.exists(image_path):
+            os.remove(image_path)
+            print(f"[BACKGROUND RERANKING] Cleaned up image file")
+
+    except Exception as e:
+        print(f"[BACKGROUND RERANKING] ❌ Failed for session {session_id[:8]}: {e}")
+        # Clean up image file even on error
+        if os.path.exists(image_path):
+            os.remove(image_path)
 
 
 def validate_image(filepath):
@@ -244,10 +297,18 @@ def analyze_photo():
         if not allowed_file(file.filename):
             return jsonify({'error': 'Invalid file type. Allowed: png, jpg, jpeg, gif, webp, heic, heif, mpo'}), 400
 
-        # Save file temporarily
+        # Create a secure random session ID FIRST
+        session_id = secrets.token_urlsafe(32)
+
+        # Save file with session_id in filename for background reranking
         filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file_extension = filename.rsplit('.', 1)[1] if '.' in filename else 'jpg'
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"{session_id}.{file_extension}")
         file.save(filepath)
+
+        # Also save raw bytes for database (before optimization)
+        with open(filepath, 'rb') as f:
+            image_data = f.read()
 
         try:
             # Validate image content (prevent malicious files)
@@ -267,22 +328,32 @@ def analyze_photo():
             songs = result['songs']  # First 5 songs
             all_songs = result['all_songs']  # Full list for caching (up to 30 songs)
 
-            # Create a secure random session ID
-            session_id = secrets.token_urlsafe(32)
+            # Create session in feedback store
+            feedback_store.create_session(session_id, image_data, analysis)
 
             # Store session with analysis, returned songs, and ALL available songs for instant "load more"
             session_songs[session_id] = {
                 'analysis': analysis,  # Store analysis for backup
                 'songs': [s['id'] for s in songs],  # Track returned song IDs
                 'all_songs': all_songs,  # Cache ALL songs for instant "load more"
-                'expires_at': datetime.now() + timedelta(hours=SESSION_EXPIRY_HOURS)
+                'expires_at': datetime.now() + timedelta(hours=SESSION_EXPIRY_HOURS),
+                'reranked': False  # Track if background reranking completed
             }
+
+            # Start background reranking task (Phase 2)
+            # This runs AFTER returning results to user for instant response
+            reranking_thread = threading.Thread(
+                target=background_reranking_task,
+                args=(session_id, filepath, all_songs, analysis),
+                daemon=True
+            )
+            reranking_thread.start()
+            print(f"[ANALYZE] Started background reranking for session {session_id[:8]}")
 
             # Cleanup expired sessions (run occasionally)
             cleanup_expired_sessions()
 
-            # Clean up uploaded file
-            os.remove(filepath)
+            # Note: filepath is NOT removed here - background task will clean it up
 
             return jsonify({
                 'success': True,
@@ -427,6 +498,91 @@ def get_more_songs():
                 'cached': False  # Indicate this was slow from API
             }), 200
 
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/feedback', methods=['POST'])
+@limiter.limit("20 per minute")  # Allow frequent feedback submissions
+def submit_feedback():
+    """
+    Submit user feedback for a song (Phase 1: User Feedback Loop)
+
+    Expected JSON: {
+        'session_id': '...',
+        'song_id': '...',
+        'song_name': '...',
+        'artist_name': '...',
+        'feedback': 1 or -1  # 1 for like, -1 for dislike
+    }
+    Returns: {
+        'success': True,
+        'feedback_id': ...
+    }
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        # Validate required fields
+        session_id = data.get('session_id')
+        song_id = data.get('song_id')
+        song_name = data.get('song_name')
+        artist_name = data.get('artist_name')
+        feedback = data.get('feedback')
+
+        if not all([session_id, song_id, song_name, artist_name, feedback]):
+            return jsonify({'error': 'Missing required fields'}), 400
+
+        # Validate feedback value
+        if feedback not in [1, -1]:
+            return jsonify({'error': 'Feedback must be 1 (like) or -1 (dislike)'}), 400
+
+        # Get session data to retrieve image analysis
+        if session_id not in session_songs:
+            return jsonify({'error': 'Session not found or expired'}), 404
+
+        session_data = session_songs[session_id]
+        analysis = session_data.get('analysis', {})
+
+        # Store feedback in database
+        feedback_id = feedback_store.add_feedback(
+            session_id=session_id,
+            song_id=song_id,
+            song_name=song_name,
+            artist_name=artist_name,
+            feedback=feedback,
+            image_analysis=analysis
+        )
+
+        print(f"[FEEDBACK] Session {session_id[:8]}: "
+              f"{'👍' if feedback == 1 else '👎'} \"{song_name}\" by {artist_name}")
+
+        return jsonify({
+            'success': True,
+            'feedback_id': feedback_id
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/feedback/stats', methods=['GET'])
+def get_feedback_stats():
+    """
+    Get overall feedback statistics (for analytics)
+
+    Returns: {
+        'likes': ...,
+        'dislikes': ...,
+        'total': ...,
+        'like_rate': ...
+    }
+    """
+    try:
+        stats = feedback_store.get_feedback_stats()
+        return jsonify(stats), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
