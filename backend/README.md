@@ -190,10 +190,18 @@ backend/
 │   ├── spotify_service.py      # Spotify API integration
 │   ├── feedback_store.py       # User feedback database layer
 │   └── verify_llm.py           # Background LLM reranking
+├── tests/                      # Test files
+│   ├── test_feedback_reranking.py
+│   ├── test_performance.py
+│   └── ...
+├── docs/                       # Documentation
+│   ├── FEEDBACK_RERANKING.md
+│   ├── PERFORMANCE_ANALYSIS.md
+│   ├── OPTIMIZATION_SUMMARY.md
+│   ├── TESTING_GUIDE.md
+│   └── REFACTOR_SUMMARY.md
 ├── uploads/                    # Temporary file storage
-├── storybeats_feedback.db      # SQLite database (auto-created)
-├── test_feedback_reranking.py  # Test suite for new features
-└── FEEDBACK_RERANKING.md       # Detailed documentation
+└── storybeats_feedback.db      # SQLite database (auto-created)
 ```
 
 ## How It Works
@@ -242,13 +250,16 @@ python app.py
 Run the complete test suite:
 ```bash
 # Test feedback and reranking features
-python3 test_feedback_reranking.py
+python3 tests/test_feedback_reranking.py
 
 # Test performance optimizations
-python3 test_performance.py
+python3 tests/test_performance.py
 
 # Test "load more" functionality
-python3 test_load_more.py
+python3 tests/test_load_more.py
+
+# Or run all tests
+python3 -m pytest tests/
 ```
 
 ## Database
@@ -302,9 +313,11 @@ fetch('/api/more-songs', {
 
 ## Documentation
 
-- **[FEEDBACK_RERANKING.md](FEEDBACK_RERANKING.md)** - Detailed documentation of feedback and reranking system
-- **[PERFORMANCE_ANALYSIS.md](PERFORMANCE_ANALYSIS.md)** - Performance optimizations and benchmarks
-- **[OPTIMIZATION_SUMMARY.md](OPTIMIZATION_SUMMARY.md)** - Summary of optimization improvements
+- **[FEEDBACK_RERANKING.md](docs/FEEDBACK_RERANKING.md)** - Detailed documentation of feedback and reranking system
+- **[PERFORMANCE_ANALYSIS.md](docs/PERFORMANCE_ANALYSIS.md)** - Performance optimizations and benchmarks
+- **[OPTIMIZATION_SUMMARY.md](docs/OPTIMIZATION_SUMMARY.md)** - Summary of optimization improvements
+- **[TESTING_GUIDE.md](docs/TESTING_GUIDE.md)** - Guide for running tests
+- **[REFACTOR_SUMMARY.md](docs/REFACTOR_SUMMARY.md)** - Summary of code refactoring
 
 ## Notes
 
