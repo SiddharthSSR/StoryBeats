@@ -252,6 +252,78 @@ class FeedbackStore:
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
 
+    def get_liked_artists(self, mood: Optional[str] = None, min_likes: int = 2) -> List[tuple]:
+        """
+        Get artists that users consistently like
+
+        Args:
+            mood: Filter by mood (e.g., "happy", "sad"). None for all moods.
+            min_likes: Minimum number of likes required
+
+        Returns:
+            List of tuples: [(artist_name, like_count), ...]
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT artist_name, COUNT(*) as like_count
+            FROM feedback
+            WHERE feedback = 1
+        """
+
+        params = []
+        if mood:
+            query += " AND json_extract(image_analysis, '$.mood') = ?"
+            params.append(mood)
+
+        query += """
+            GROUP BY artist_name
+            HAVING like_count >= ?
+            ORDER BY like_count DESC
+        """
+        params.append(min_likes)
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [(row['artist_name'], row['like_count']) for row in rows]
+
+    def get_disliked_artists(self, mood: Optional[str] = None, min_dislikes: int = 2) -> List[tuple]:
+        """
+        Get artists that users consistently dislike
+
+        Args:
+            mood: Filter by mood (e.g., "happy", "sad"). None for all moods.
+            min_dislikes: Minimum number of dislikes required
+
+        Returns:
+            List of tuples: [(artist_name, dislike_count), ...]
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT artist_name, COUNT(*) as dislike_count
+            FROM feedback
+            WHERE feedback = -1
+        """
+
+        params = []
+        if mood:
+            query += " AND json_extract(image_analysis, '$.mood') = ?"
+            params.append(mood)
+
+        query += """
+            GROUP BY artist_name
+            HAVING dislike_count >= ?
+            ORDER BY dislike_count DESC
+        """
+        params.append(min_dislikes)
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [(row['artist_name'], row['dislike_count']) for row in rows]
+
     def close(self):
         """Close database connection"""
         if hasattr(self._local, 'conn'):

@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from datetime import datetime
 import threading
+from services.feedback_store import get_feedback_store
 
 try:
     from spotipy.retry import SpotifyRetry
@@ -1092,6 +1093,23 @@ class SpotifyService:
             effective_vibe_threshold = 0.5 if not audio_features_working else self.VIBE_THRESHOLD
 
             # Filter and score tracks
+            # Get feedback-based preferences
+            mood = image_analysis.get('mood')
+            feedback_store = get_feedback_store()
+
+            # Get liked and disliked artists (require at least 1 feedback to count)
+            liked_artists = feedback_store.get_liked_artists(mood=mood, min_likes=1)
+            disliked_artists = feedback_store.get_disliked_artists(mood=mood, min_dislikes=1)
+
+            # Convert to sets for faster lookup
+            liked_artist_names = set([artist for artist, _ in liked_artists])
+            disliked_artist_names = set([artist for artist, _ in disliked_artists])
+
+            if liked_artist_names or disliked_artist_names:
+                print(f"\n[Feedback] Using feedback data:")
+                print(f"  Liked artists: {list(liked_artist_names)[:5]}")
+                print(f"  Disliked artists: {list(disliked_artist_names)[:5]}")
+
             scored_tracks = []
             for i, track in enumerate(all_tracks_with_metadata):
                 if i >= len(all_audio_features):
@@ -1129,6 +1147,19 @@ class SpotifyService:
                     recency_bonus * self.RECENCY_WEIGHT +
                     (popularity / 100) * self.POPULARITY_WEIGHT
                 )
+
+                # Apply feedback-based adjustments
+                artist_name = track.get('artists', [{}])[0].get('name', '')
+                feedback_multiplier = 1.0
+
+                if artist_name in liked_artist_names:
+                    feedback_multiplier = 1.3  # 30% boost for liked artists
+                    track['_feedback_boost'] = 'liked'
+                elif artist_name in disliked_artist_names:
+                    feedback_multiplier = 0.7  # 30% penalty for disliked artists
+                    track['_feedback_boost'] = 'disliked'
+
+                final_score *= feedback_multiplier
 
                 track['_vibe_score'] = vibe_score
                 track['_recency_bonus'] = recency_bonus
