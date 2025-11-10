@@ -37,193 +37,81 @@ class SpotifyService:
     # Curated Artist Lists - English (Mainstream Pop + Indie Mix)
     ENGLISH_ARTISTS = {
         'romantic': [
-            'Sabrina Carpenter', 'Taylor Swift', 'Gracie Abrams', 'Lauv',
-            'Cigarettes After Sex', 'The Japanese House', 'Jeremy Zucker',
-            'Lizzy McAlpine', 'Hozier', 'Holly Humberstone'
+            'Cigarettes After Sex', 'The Neighbourhood', 'Lauv', 'Gracie Abrams',
+            'Conan Gray', 'Jeremy Zucker', 'mxmtoon', 'girl in red'
         ],
         'energetic': [
-            'Dua Lipa', 'Charli XCX', 'Glass Animals', 'Tame Impala',
-            'The 1975', 'Paramore', 'The Strokes', 'Arctic Monkeys',
-            'Maneskin', 'Chappell Roan'
+            'Tame Impala', 'Glass Animals', 'MGMT', 'Foster The People',
+            'Two Door Cinema Club', 'The Strokes', 'Arctic Monkeys', 'Phoenix'
         ],
         'peaceful': [
-            'Bon Iver', 'Novo Amor', 'Ben Howard', 'Angus & Julia Stone',
-            'Iron & Wine', 'Leif Vollebekk', 'Sufjan Stevens',
-            'Jose Gonzalez', 'Bear\'s Den', 'Ray LaMontagne'
+            'Bon Iver', 'Novo Amor', 'Phoebe Bridgers', 'Iron & Wine',
+            'Sufjan Stevens', 'Fleet Foxes', 'Jose Gonzalez', 'Ben Howard'
         ],
         'melancholic': [
-            'Phoebe Bridgers', 'Mitski', 'Elliott Smith', 'The National',
-            'Daughter', 'Sharon Van Etten', 'Keaton Henson',
-            'Soccer Mommy', 'Radiohead', 'Skullcrusher'
+            'Radiohead', 'Mazzy Star', 'The National', 'Daughter',
+            'Sleeping At Last', 'Mitski', 'Phoebe Bridgers', 'Elliott Smith'
         ],
         'happy': [
-            'COIN', 'Wallows', 'Dayglow', 'Grouplove',
-            'Two Door Cinema Club', 'Foster The People', 'Bleachers',
-            'Vampire Weekend', 'AJR', 'Smallpools'
+            'Two Door Cinema Club', 'Passion Pit', 'Phoenix', 'COIN',
+            'MGMT', 'Young The Giant', 'Grouplove', 'Smallpools'
         ],
         'confident': [
-            'The Weeknd', 'Dua Lipa', 'Doja Cat', 'SZA',
-            'Post Malone', 'Jack Harlow', 'Nicki Minaj',
-            'Billie Eilish', 'Ariana Grande', 'Victoria Monet'
+            'The Weeknd', 'Travis Scott', 'Dua Lipa', 'Billie Eilish',
+            'Khalid', 'Post Malone', 'Doja Cat', 'SZA'
         ],
         'nostalgic': [
-            'MGMT', 'The Strokes', 'The Killers', 'Kings of Leon',
-            'Yeah Yeah Yeahs', 'The Cranberries', 'Coldplay',
-            'Blink-182', 'No Doubt', 'Fleetwood Mac'
+            'The 1975', 'Arctic Monkeys', 'Mac DeMarco', 'MGMT',
+            'Tame Impala', 'Vampire Weekend', 'The Strokes', 'Kings of Leon'
         ],
         'dreamy': [
-            'Beach House', 'M83', 'Alvvays', 'Men I Trust',
-            'Clairo', 'Cigarettes After Sex', 'DIIV',
-            'The Japanese House', 'Cocteau Twins', 'Wild Nothing'
+            'Beach House', 'M83', 'ODESZA', 'Clairo',
+            'Men I Trust', 'Still Woozy', 'Rex Orange County', 'Kali Uchis'
         ],
         'moody': [
-            'Frank Ocean', 'SZA', 'The Weeknd', 'Brent Faiyaz',
-            'Kali Uchis', 'FKA twigs', '6LACK',
-            'James Blake', 'Kukomi (yeule)', 'Tinashe'
-        ],
-        'fresh_radar': [
-            'Chappell Roan', 'Benson Boone', 'Yeule', 'Mei Semones',
-            'Delto (dellaxoz)', 'Malcolm Todd', 'Holly Humberstone',
-            'Grentperez', 'Blondshell', 'Renee Rapp'
+            'Frank Ocean', 'Don Toliver', 'Travis Scott', 'SZA',
+            'The Weeknd', 'Bryson Tiller', 'PartyNextDoor', '6LACK'
         ]
     }
 
-    # Curated Artist Lists - Hindi (separate pools for Bollywood, Indie, Punjabi)
-    HINDI_BOLLYWOOD = {
+    # Curated Artist Lists - Hindi (Bollywood + Indie Hindi + Punjabi)
+    HINDI_ARTISTS = {
         'romantic': [
-            'Arijit Singh', 'Shreya Ghoshal', 'A.R. Rahman', 'Jasleen Royal',
-            'Amit Trivedi', 'Pritam', 'Jubin Nautiyal',
-            'Raghav Chaitanya', 'Anirudh Ravichander', 'Mohit Chauhan'
+            'Arijit Singh', 'Atif Aslam', 'Shreya Ghoshal', 'Armaan Malik',
+            'Jubin Nautiyal', 'Prateek Kuhad', 'Anuv Jain', 'Raghav Chaitanya'
         ],
         'energetic': [
-            'Badshah', 'Honey Singh', 'Neha Kakkar', 'Armaan Malik',
-            'Jonita Gandhi', 'King', 'DIVINE',
-            'Anirudh Ravichander', 'Vishal-Shekhar', 'Sachin-Jigar'
+            'Badshah', 'Diljit Dosanjh', 'Divine', 'Raftaar',
+            'Nucleya', 'Karan Aujla', 'Seedhe Maut', 'The Local Train'
         ],
         'peaceful': [
-            'Lucky Ali', 'Papon', 'Shankar-Ehsaan-Loy', 'Mohan Kannan',
-            'Prateek Kuhad', 'Anuv Jain', 'Mohit Chauhan',
-            'Shashaa Tirupati', 'Shilpa Rao', 'When Chai Met Toast'
+            'A.R. Rahman', 'Shaan', 'Lucky Ali', 'Prateek Kuhad',
+            'Mohit Chauhan', 'Sonu Nigam', 'Papon', 'When Chai Met Toast'
         ],
         'melancholic': [
-            'KK', 'Sonu Nigam', 'Arijit Singh', 'Jubin Nautiyal',
-            'Asees Kaur', 'Anuv Jain', 'Prateek Kuhad',
-            'Akhil Sachdeva', 'Aseem', 'Raghav Chaitanya'
-        ],
-        'nostalgic': [
-            'Kishore Kumar', 'Mohammed Rafi', 'R.D. Burman',
-            'Lata Mangeshkar', 'Kumar Sanu', 'Alka Yagnik',
-            'Udit Narayan', 'Sonu Nigam', 'Shaan', 'Abhijeet'
-        ]
-    }
-
-    HINDI_INDIE = {
-        'romantic': [
-            'Prateek Kuhad', 'Anuv Jain', 'OAFF', 'Savera',
-            'The Local Train', 'Mitraz', 'Taba Chake',
-            'Hanita Bhambri', 'Ananya Birla', 'Sanjoy'
-        ],
-        'energetic': [
-            'Hanumankind', 'Seedhe Maut', 'KSHMR', 'Kayan',
-            'Ritviz', 'Zaeden', 'KR$NA',
-            'Siri', 'MC Stan', 'Prabh Deep'
-        ],
-        'peaceful': [
-            'When Chai Met Toast', 'Rahul Rajkhowa', 'Parekh & Singh',
-            'Tejas', 'Anand Bhaskar', 'Dot.', 'Mali',
-            'Abhilasha Sinha', 'Aditya Rikhari', 'Chayan & Smiti'
-        ],
-        'melancholic': [
-            'Lifafa', 'Osho Jain', 'AUR', 'Mitraz',
-            'Anuv Jain', 'Prateek Kuhad', 'Kamakhya',
-            'Dot.', 'Anand Bhaskar', 'Second Sight'
-        ],
-        'dreamy': [
-            'Parekh & Singh', 'AUR', 'When Chai Met Toast',
-            'Peter Cat Recording Co.', 'The Yellow Diary',
-            'Khwaab', 'Nothing Anonymous', 'Anumita Nadesan',
-            'Dualist Inquiry (chill sets)', 'Smalltalk'
-        ],
-        'moody': [
-            'Lifafa', 'Sez on the Beat', 'Prabh Deep',
-            'Seedhe Maut', 'Dhee', 'KSHMR',
-            'Zaeden', 'Anuv Jain', 'The F16s', 'Kayan'
-        ],
-        'fresh_radar': [
-            'AUR', 'Param (That Girl)', 'When Chai Met Toast',
-            'Mitraz', 'Aditya Rikhari', 'SANAM',
-            'Anumita Nadesan', 'Hanumankind', 'TWS', 'The Yellow Diary'
-        ]
-    }
-
-    PUNJABI_ARTISTS = {
-        'romantic': [
-            'Diljit Dosanjh', 'B Praak', 'Jaani', 'Akhil',
-            'Afsana Khan', 'Sunanda Sharma', 'Shreya Ghoshal',
-            'Jasleen Royal', 'Ammy Virk', 'Asees Kaur'
-        ],
-        'energetic': [
-            'Karan Aujla', 'AP Dhillon', 'Shubh', 'Badshah',
-            'Ikka', 'Arjan Dhillon', 'Gurinder Gill',
-            'Parmish Verma', 'Deep Kalsi', 'MC Square'
+            'Mohit Chauhan', 'KK', 'Sonu Nigam', 'Jubin Nautiyal',
+            'Arijit Singh', 'Atif Aslam', 'Anuv Jain', 'Prateek Kuhad'
         ],
         'happy': [
-            'Diljit Dosanjh', 'Guru Randhawa', 'Harrdy Sandhu',
-            'Amaal Mallik', 'Manni Sandhu', 'Parmish Verma',
-            'Jass Manak', 'Navaan Sandhu', 'Jordan Sandhu', 'Ranjit Bawa'
+            'Guru Randhawa', 'Neha Kakkar', 'Darshan Raval', 'Diljit Dosanjh',
+            'Harrdy Sandhu', 'Asees Kaur', 'When Chai Met Toast', 'Sunidhi Chauhan'
+        ],
+        'confident': [
+            'Badshah', 'Divine', 'Raftaar', 'Ikka',
+            'Seedhe Maut', 'Prabh Deep', 'Naezy', 'MC Stan'
+        ],
+        'nostalgic': [
+            'Kishore Kumar', 'R.D. Burman', 'Mohammed Rafi', 'Kumar Sanu',
+            'Alka Yagnik', 'Udit Narayan', 'Sonu Nigam', 'Lucky Ali'
+        ],
+        'dreamy': [
+            'Prateek Kuhad', 'Anuv Jain', 'When Chai Met Toast', 'The Local Train',
+            'Zaeden', 'Lifafa', 'Kamakshi Khanna', 'Shankar Mahadevan'
         ],
         'moody': [
-            'AP Dhillon', 'Shubh', 'Karan Aujla',
-            'Talwiinder', 'The PropheC', 'Ezu',
-            'Ikka', 'Riar Saab', 'Wazir Patar', 'NseeB'
-        ],
-        'fresh_radar': [
-            'Param (Paramjeet Kaur)', 'Thiarajxtt', 'Riar Saab',
-            'Talwiinder', 'Wazir Patar', 'Himmat Sandhu',
-            'G. Sidhu', 'Harnoor', 'Arjan Dhillon', 'Thugzy'
+            'Anuv Jain', 'Prateek Kuhad', 'The Local Train', 'Lifafa',
+            'Seedhe Maut', 'Prabh Deep', 'Dropped Out', 'Sez on the Beat'
         ]
-    }
-
-    HINDI_ARTISTS = {
-        'romantic': list(dict.fromkeys(
-            HINDI_BOLLYWOOD.get('romantic', []) +
-            HINDI_INDIE.get('romantic', []) +
-            PUNJABI_ARTISTS.get('romantic', [])
-        )),
-        'energetic': list(dict.fromkeys(
-            HINDI_BOLLYWOOD.get('energetic', []) +
-            HINDI_INDIE.get('energetic', []) +
-            PUNJABI_ARTISTS.get('energetic', [])
-        )),
-        'peaceful': list(dict.fromkeys(
-            HINDI_BOLLYWOOD.get('peaceful', []) +
-            HINDI_INDIE.get('peaceful', [])
-        )),
-        'melancholic': list(dict.fromkeys(
-            HINDI_BOLLYWOOD.get('melancholic', []) +
-            HINDI_INDIE.get('melancholic', [])
-        )),
-        'happy': list(dict.fromkeys(
-            PUNJABI_ARTISTS.get('happy', [])
-        )),
-        'confident': list(dict.fromkeys(
-            HINDI_BOLLYWOOD.get('energetic', []) +
-            HINDI_INDIE.get('moody', [])
-        )),
-        'nostalgic': list(dict.fromkeys(
-            HINDI_BOLLYWOOD.get('nostalgic', [])
-        )),
-        'dreamy': list(dict.fromkeys(
-            HINDI_INDIE.get('dreamy', [])
-        )),
-        'moody': list(dict.fromkeys(
-            HINDI_INDIE.get('moody', []) +
-            PUNJABI_ARTISTS.get('moody', [])
-        )),
-        'fresh_radar': list(dict.fromkeys(
-            HINDI_INDIE.get('fresh_radar', []) +
-            PUNJABI_ARTISTS.get('fresh_radar', [])
-        ))
     }
 
     # Mood Fallback Mapping
@@ -242,10 +130,7 @@ class SpotifyService:
         'dark': 'moody',
         'atmospheric': 'moody',
         'love': 'romantic',
-        'thoughtful': 'melancholic',
-        'fresh': 'fresh_radar',
-        'trending': 'fresh_radar',
-        'new': 'fresh_radar'
+        'thoughtful': 'melancholic'
     }
 
     def __init__(self):

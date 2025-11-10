@@ -350,10 +350,10 @@ Before removing old algorithm and deploying:
 - [x] Mock integration tests passing (3/3)
 - [x] Syntax validated
 - [x] Old algorithm preserved as fallback
-- [x] Real photo testing complete
-- [x] Hindi song quality verified
-- [x] Performance acceptable
-- [x] User approval obtained
+- [ ] Real photo testing complete
+- [ ] Hindi song quality verified
+- [ ] Performance acceptable
+- [ ] User approval obtained
 
 ---
 
