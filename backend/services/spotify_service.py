@@ -78,7 +78,7 @@ class SpotifyService:
     HINDI_ARTISTS = {
         'romantic': [
             'Arijit Singh', 'Atif Aslam', 'Shreya Ghoshal', 'Armaan Malik',
-            'Jubin Nautiyal', 'Prateek Kuhad', 'Anuv Jain', 'Raghav Chaitanya'
+            'Jubin Nautiyal', 'Prateek Kuhad', 'Raghav Chaitanya'
         ],
         'energetic': [
             'Badshah', 'Diljit Dosanjh', 'Divine', 'Raftaar',
@@ -90,10 +90,10 @@ class SpotifyService:
         ],
         'melancholic': [
             'Mohit Chauhan', 'KK', 'Sonu Nigam', 'Jubin Nautiyal',
-            'Arijit Singh', 'Atif Aslam', 'Anuv Jain', 'Prateek Kuhad'
+            'Arijit Singh', 'Atif Aslam', 'Prateek Kuhad'
         ],
         'happy': [
-            'Guru Randhawa', 'Neha Kakkar', 'Darshan Raval', 'Diljit Dosanjh',
+            'Guru Randhawa','Darshan Raval', 'Diljit Dosanjh',
             'Harrdy Sandhu', 'Asees Kaur', 'When Chai Met Toast', 'Sunidhi Chauhan'
         ],
         'confident': [
@@ -105,11 +105,11 @@ class SpotifyService:
             'Alka Yagnik', 'Udit Narayan', 'Sonu Nigam', 'Lucky Ali'
         ],
         'dreamy': [
-            'Prateek Kuhad', 'Anuv Jain', 'When Chai Met Toast', 'The Local Train',
+            'Prateek Kuhad', 'When Chai Met Toast', 'The Local Train',
             'Zaeden', 'Lifafa', 'Kamakshi Khanna', 'Shankar Mahadevan'
         ],
         'moody': [
-            'Anuv Jain', 'Prateek Kuhad', 'The Local Train', 'Lifafa',
+            'Prateek Kuhad', 'The Local Train', 'Lifafa',
             'Seedhe Maut', 'Prabh Deep', 'Dropped Out', 'Sez on the Beat'
         ]
     }
