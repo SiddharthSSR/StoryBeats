@@ -52,6 +52,9 @@ function App() {
   const handleGetMoreSongs = async () => {
     if (!results || !results.analysis) return
 
+    // Track load more click (implicit signal)
+    trackImplicitFeedback('load_more', null, 0.5)
+
     setLoadingMore(true)
     setError(null)
 
@@ -125,6 +128,32 @@ function App() {
     }
   }
 
+  // Track implicit feedback signals (Phase 2: Implicit Feedback)
+  const trackImplicitFeedback = async (signalType, song = null, weight = 1.0) => {
+    if (!sessionId) return
+
+    try {
+      await fetch(`${API_URL}/api/feedback/implicit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          song_id: song?.id || '',
+          song_name: song?.name || '',
+          artist_name: song?.artist || '',
+          signal_type: signalType,
+          weight: weight,
+        }),
+      })
+      // Fire and forget - don't wait for response
+    } catch (err) {
+      // Silently fail - implicit signals are not critical
+      console.debug('Implicit feedback tracking:', err)
+    }
+  }
+
   const handleReset = () => {
     setResults(null)
     setError(null)
@@ -161,6 +190,7 @@ function App() {
             loadingMore={loadingMore}
             onFeedback={handleFeedback}
             feedback={feedback}
+            onImplicitFeedback={trackImplicitFeedback}
           />
         )}
       </main>

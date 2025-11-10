@@ -49,7 +49,7 @@ class FeedbackStore:
             )
         """)
 
-        # Feedback table: Store user likes/dislikes
+        # Feedback table: Store user likes/dislikes (explicit and implicit)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS feedback (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,7 +57,9 @@ class FeedbackStore:
                 song_id TEXT,
                 song_name TEXT,
                 artist_name TEXT,
-                feedback INTEGER,  -- 1 for like, -1 for dislike
+                feedback INTEGER,  -- 1 for like, -1 for dislike, or weighted value
+                signal_type TEXT DEFAULT 'explicit',  -- 'explicit', 'spotify_click', 'preview_play', etc.
+                weight REAL DEFAULT 1.0,  -- Signal strength (2.0 for strong, 1.0 for medium, 0.5 for weak)
                 image_analysis JSON,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (session_id) REFERENCES sessions(session_id)
@@ -82,6 +84,32 @@ class FeedbackStore:
 
         conn.commit()
         print("✅ Database initialized: storybeats_feedback.db")
+
+        # Run migrations for existing databases
+        self._run_migrations()
+
+    def _run_migrations(self):
+        """Run database migrations to add new columns to existing tables"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Check if signal_type column exists
+            cursor.execute("PRAGMA table_info(feedback)")
+            columns = [row[1] for row in cursor.fetchall()]
+
+            # Add signal_type and weight columns if they don't exist
+            if 'signal_type' not in columns:
+                cursor.execute("ALTER TABLE feedback ADD COLUMN signal_type TEXT DEFAULT 'explicit'")
+                print("✅ Migration: Added signal_type column to feedback table")
+
+            if 'weight' not in columns:
+                cursor.execute("ALTER TABLE feedback ADD COLUMN weight REAL DEFAULT 1.0")
+                print("✅ Migration: Added weight column to feedback table")
+
+            conn.commit()
+        except Exception as e:
+            print(f"⚠️  Migration warning: {e}")
 
     def create_session(self, session_id: str, image_data: bytes, analysis: Dict) -> str:
         """
@@ -110,17 +138,20 @@ class FeedbackStore:
         return session_id
 
     def add_feedback(self, session_id: str, song_id: str, song_name: str,
-                    artist_name: str, feedback: int, image_analysis: Dict) -> int:
+                    artist_name: str, feedback: int, image_analysis: Dict,
+                    signal_type: str = 'explicit', weight: float = 1.0) -> int:
         """
-        Record user feedback for a song
+        Record user feedback for a song (explicit or implicit)
 
         Args:
             session_id: Session ID
             song_id: Spotify track ID
             song_name: Song name
             artist_name: Artist name
-            feedback: 1 for like, -1 for dislike
+            feedback: 1 for like, -1 for dislike, or weighted value
             image_analysis: The analysis that led to this recommendation
+            signal_type: Type of signal ('explicit', 'spotify_click', 'preview_play', etc.)
+            weight: Signal strength (2.0 for strong, 1.0 for medium, 0.5 for weak)
 
         Returns:
             feedback_id
@@ -129,9 +160,9 @@ class FeedbackStore:
         cursor = conn.cursor()
 
         cursor.execute("""
-            INSERT INTO feedback (session_id, song_id, song_name, artist_name, feedback, image_analysis)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (session_id, song_id, song_name, artist_name, feedback, json.dumps(image_analysis)))
+            INSERT INTO feedback (session_id, song_id, song_name, artist_name, feedback, image_analysis, signal_type, weight)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (session_id, song_id, song_name, artist_name, feedback, json.dumps(image_analysis), signal_type, weight))
 
         conn.commit()
         return cursor.lastrowid

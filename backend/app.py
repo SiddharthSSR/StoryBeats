@@ -568,6 +568,96 @@ def submit_feedback():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/feedback/implicit', methods=['POST'])
+@limiter.limit("50 per minute")  # Higher limit for implicit signals
+def submit_implicit_feedback():
+    """
+    Submit implicit user feedback (Phase 2: Implicit Signals)
+
+    Tracks user actions like Spotify clicks, preview plays, etc.
+
+    Expected JSON: {
+        'session_id': '...',
+        'song_id': '...',     # Optional for session-level signals
+        'song_name': '...',   # Optional
+        'artist_name': '...',  # Optional
+        'signal_type': 'spotify_click' | 'preview_play' | 'preview_complete' | 'load_more',
+        'weight': 2.0  # Signal strength (2.0 strong, 1.0 medium, 0.5 weak)
+    }
+    Returns: {
+        'success': True,
+        'feedback_id': ...
+    }
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        # Validate required fields
+        session_id = data.get('session_id')
+        signal_type = data.get('signal_type')
+        weight = data.get('weight', 1.0)
+
+        if not all([session_id, signal_type]):
+            return jsonify({'error': 'Missing required fields (session_id, signal_type)'}), 400
+
+        # Get optional song data
+        song_id = data.get('song_id', '')
+        song_name = data.get('song_name', '')
+        artist_name = data.get('artist_name', '')
+
+        # Get session data to retrieve image analysis
+        if session_id not in session_songs:
+            return jsonify({'error': 'Session not found or expired'}), 404
+
+        session_data = session_songs[session_id]
+        analysis = session_data.get('analysis', {})
+
+        # Map signal types to feedback values
+        signal_feedback_map = {
+            'spotify_click': 1,      # Strong positive
+            'preview_play': 1,       # Positive
+            'preview_complete': 1,   # Positive
+            'load_more': 1,          # Session-level positive
+        }
+
+        feedback_value = signal_feedback_map.get(signal_type, 1)
+
+        # Store implicit feedback in database
+        feedback_id = feedback_store.add_feedback(
+            session_id=session_id,
+            song_id=song_id,
+            song_name=song_name,
+            artist_name=artist_name,
+            feedback=feedback_value,
+            image_analysis=analysis,
+            signal_type=signal_type,
+            weight=weight
+        )
+
+        signal_icons = {
+            'spotify_click': '🎵',
+            'preview_play': '▶️',
+            'preview_complete': '✅',
+            'load_more': '🔄'
+        }
+        icon = signal_icons.get(signal_type, '📊')
+
+        if song_name:
+            print(f"[IMPLICIT] {icon} {signal_type}: \"{song_name}\" by {artist_name} (weight: {weight})")
+        else:
+            print(f"[IMPLICIT] {icon} {signal_type}: session-level (weight: {weight})")
+
+        return jsonify({
+            'success': True,
+            'feedback_id': feedback_id
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/feedback/stats', methods=['GET'])
 def get_feedback_stats():
     """

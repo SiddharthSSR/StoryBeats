@@ -1,6 +1,6 @@
 import './SongResults.css'
 
-function SongResults({ analysis, songs, onReset, onGetMore, loadingMore, onFeedback, feedback }) {
+function SongResults({ analysis, songs, onReset, onGetMore, loadingMore, onFeedback, feedback, onImplicitFeedback }) {
   const safeAnalysis = analysis || {}
   const safeSongs = Array.isArray(songs) ? songs : []
 
@@ -75,7 +75,12 @@ function SongResults({ analysis, songs, onReset, onGetMore, loadingMore, onFeedb
                   <p className="song-album">{song.album || 'Unknown Album'}</p>
                 </div>
                 {song.preview_url && (
-                  <audio controls className="song-preview">
+                  <audio
+                    controls
+                    className="song-preview"
+                    onPlay={() => onImplicitFeedback && onImplicitFeedback('preview_play', song, 1.0)}
+                    onEnded={() => onImplicitFeedback && onImplicitFeedback('preview_complete', song, 1.5)}
+                  >
                     <source src={song.preview_url} type="audio/mpeg" />
                     Your browser does not support the audio element.
                   </audio>
@@ -127,6 +132,7 @@ function SongResults({ analysis, songs, onReset, onGetMore, loadingMore, onFeedb
                       target="_blank"
                       rel="noopener noreferrer"
                       className="spotify-link"
+                      onClick={() => onImplicitFeedback && onImplicitFeedback('spotify_click', song, 2.0)}
                     >
                       Open in Spotify
                     </a>
