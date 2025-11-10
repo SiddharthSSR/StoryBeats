@@ -60,6 +60,7 @@ class FeedbackStore:
                 feedback INTEGER,  -- 1 for like, -1 for dislike, or weighted value
                 signal_type TEXT DEFAULT 'explicit',  -- 'explicit', 'spotify_click', 'preview_play', etc.
                 weight REAL DEFAULT 1.0,  -- Signal strength (2.0 for strong, 1.0 for medium, 0.5 for weak)
+                audio_features JSON,  -- Spotify audio features (energy, valence, etc.) for Phase 1B
                 image_analysis JSON,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (session_id) REFERENCES sessions(session_id)
@@ -94,11 +95,11 @@ class FeedbackStore:
         cursor = conn.cursor()
 
         try:
-            # Check if signal_type column exists
+            # Check existing columns
             cursor.execute("PRAGMA table_info(feedback)")
             columns = [row[1] for row in cursor.fetchall()]
 
-            # Add signal_type and weight columns if they don't exist
+            # Add signal_type and weight columns if they don't exist (Phase 2)
             if 'signal_type' not in columns:
                 cursor.execute("ALTER TABLE feedback ADD COLUMN signal_type TEXT DEFAULT 'explicit'")
                 print("✅ Migration: Added signal_type column to feedback table")
@@ -106,6 +107,11 @@ class FeedbackStore:
             if 'weight' not in columns:
                 cursor.execute("ALTER TABLE feedback ADD COLUMN weight REAL DEFAULT 1.0")
                 print("✅ Migration: Added weight column to feedback table")
+
+            # Add audio_features column if it doesn't exist (Phase 1B)
+            if 'audio_features' not in columns:
+                cursor.execute("ALTER TABLE feedback ADD COLUMN audio_features JSON")
+                print("✅ Migration: Added audio_features column to feedback table")
 
             conn.commit()
         except Exception as e:
@@ -139,7 +145,8 @@ class FeedbackStore:
 
     def add_feedback(self, session_id: str, song_id: str, song_name: str,
                     artist_name: str, feedback: int, image_analysis: Dict,
-                    signal_type: str = 'explicit', weight: float = 1.0) -> int:
+                    signal_type: str = 'explicit', weight: float = 1.0,
+                    audio_features: Optional[Dict] = None) -> int:
         """
         Record user feedback for a song (explicit or implicit)
 
@@ -152,6 +159,7 @@ class FeedbackStore:
             image_analysis: The analysis that led to this recommendation
             signal_type: Type of signal ('explicit', 'spotify_click', 'preview_play', etc.)
             weight: Signal strength (2.0 for strong, 1.0 for medium, 0.5 for weak)
+            audio_features: Spotify audio features (Phase 1B: Audio Feature Learning)
 
         Returns:
             feedback_id
@@ -159,10 +167,13 @@ class FeedbackStore:
         conn = self._get_connection()
         cursor = conn.cursor()
 
+        # Convert audio_features to JSON if provided
+        audio_features_json = json.dumps(audio_features) if audio_features else None
+
         cursor.execute("""
-            INSERT INTO feedback (session_id, song_id, song_name, artist_name, feedback, image_analysis, signal_type, weight)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (session_id, song_id, song_name, artist_name, feedback, json.dumps(image_analysis), signal_type, weight))
+            INSERT INTO feedback (session_id, song_id, song_name, artist_name, feedback, image_analysis, signal_type, weight, audio_features)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (session_id, song_id, song_name, artist_name, feedback, json.dumps(image_analysis), signal_type, weight, audio_features_json))
 
         conn.commit()
         return cursor.lastrowid

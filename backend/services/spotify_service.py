@@ -7,6 +7,7 @@ from functools import lru_cache
 from datetime import datetime
 import threading
 from services.feedback_store import get_feedback_store
+from services.audio_feature_analytics import get_audio_feature_analytics
 
 try:
     from spotipy.retry import SpotifyRetry
@@ -81,7 +82,7 @@ class SpotifyService:
         ],
         'energetic': [
             'Badshah', 'Diljit Dosanjh', 'Divine', 'Raftaar',
-            'Nucleya', 'Ritviz', 'Seedhe Maut', 'The Local Train'
+            'Nucleya', 'Karan Aujla', 'Seedhe Maut', 'The Local Train'
         ],
         'peaceful': [
             'A.R. Rahman', 'Shaan', 'Lucky Ali', 'Prateek Kuhad',
@@ -92,8 +93,8 @@ class SpotifyService:
             'Arijit Singh', 'Atif Aslam', 'Anuv Jain', 'Prateek Kuhad'
         ],
         'happy': [
-            'Guru Randhawa', 'Neha Kakkar', 'Darshan Raval', 'Ritviz',
-            'Diljit Dosanjh', 'Harrdy Sandhu', 'Asees Kaur', 'When Chai Met Toast'
+            'Guru Randhawa', 'Neha Kakkar', 'Darshan Raval', 'Diljit Dosanjh',
+            'Harrdy Sandhu', 'Asees Kaur', 'When Chai Met Toast', 'Sunidhi Chauhan'
         ],
         'confident': [
             'Badshah', 'Divine', 'Raftaar', 'Ikka',
@@ -104,8 +105,8 @@ class SpotifyService:
             'Alka Yagnik', 'Udit Narayan', 'Sonu Nigam', 'Lucky Ali'
         ],
         'dreamy': [
-            'Prateek Kuhad', 'Anuv Jain', 'Ritviz', 'When Chai Met Toast',
-            'The Local Train', 'Zaeden', 'Lifafa', 'Kamakshi Khanna'
+            'Prateek Kuhad', 'Anuv Jain', 'When Chai Met Toast', 'The Local Train',
+            'Zaeden', 'Lifafa', 'Kamakshi Khanna', 'Shankar Mahadevan'
         ],
         'moody': [
             'Anuv Jain', 'Prateek Kuhad', 'The Local Train', 'Lifafa',
@@ -646,8 +647,8 @@ class SpotifyService:
                 features['valence'] = max(0.4, min(0.7, features['valence']))
                 features['tempo'] = max(75, min(105, features['tempo']))
 
-            # Electronic/Producer (Ritviz, Nucleya, etc.)
-            elif any(word in artist_name for word in ['ritviz', 'nucleya', 'sez on the beat', 'dropped out']):
+            # Electronic/Producer (Nucleya, etc.)
+            elif any(word in artist_name for word in ['nucleya', 'sez on the beat', 'dropped out']):
                 features['energy'] = min(0.95, features['energy'] + 0.25)
                 features['danceability'] = min(0.95, features['danceability'] + 0.25)
                 features['acousticness'] = max(0.05, features['acousticness'] - 0.4)
@@ -1093,11 +1094,12 @@ class SpotifyService:
             effective_vibe_threshold = 0.5 if not audio_features_working else self.VIBE_THRESHOLD
 
             # Filter and score tracks
-            # Get feedback-based preferences
+            # Get feedback-based preferences (Phase 1A: Artist Boosting & Phase 1B: Audio Feature Learning)
             mood = image_analysis.get('mood')
             feedback_store = get_feedback_store()
+            audio_analytics = get_audio_feature_analytics()
 
-            # Get liked and disliked artists (require at least 1 feedback to count)
+            # Phase 1A: Get liked and disliked artists (require at least 1 feedback to count)
             liked_artists = feedback_store.get_liked_artists(mood=mood, min_likes=1)
             disliked_artists = feedback_store.get_disliked_artists(mood=mood, min_dislikes=1)
 
@@ -1105,10 +1107,17 @@ class SpotifyService:
             liked_artist_names = set([artist for artist, _ in liked_artists])
             disliked_artist_names = set([artist for artist, _ in disliked_artists])
 
-            if liked_artist_names or disliked_artist_names:
-                print(f"\n[Feedback] Using feedback data:")
-                print(f"  Liked artists: {list(liked_artist_names)[:5]}")
-                print(f"  Disliked artists: {list(disliked_artist_names)[:5]}")
+            # Phase 1B: Get audio feature preferences
+            audio_preferences = audio_analytics.get_preferred_audio_features(mood=mood)
+            has_audio_preferences = audio_preferences.get('metadata', {}).get('has_enough_data', False)
+
+            if liked_artist_names or disliked_artist_names or has_audio_preferences:
+                print(f"\n[Feedback] Using learned preferences:")
+                if liked_artist_names or disliked_artist_names:
+                    print(f"  [Phase 1A] Liked artists: {list(liked_artist_names)[:5]}")
+                    print(f"  [Phase 1A] Disliked artists: {list(disliked_artist_names)[:5]}")
+                if has_audio_preferences:
+                    print(f"  [Phase 1B] Audio feature preferences learned from {audio_preferences['metadata']['liked_count']} liked songs")
 
             scored_tracks = []
             for i, track in enumerate(all_tracks_with_metadata):
@@ -1149,17 +1158,32 @@ class SpotifyService:
                 )
 
                 # Apply feedback-based adjustments
+                # Phase 1A: Artist preference boosting
                 artist_name = track.get('artists', [{}])[0].get('name', '')
                 feedback_multiplier = 1.0
 
                 if artist_name in liked_artist_names:
                     feedback_multiplier = 1.3  # 30% boost for liked artists
-                    track['_feedback_boost'] = 'liked'
+                    track['_feedback_boost'] = 'liked_artist'
                 elif artist_name in disliked_artist_names:
                     feedback_multiplier = 0.7  # 30% penalty for disliked artists
-                    track['_feedback_boost'] = 'disliked'
+                    track['_feedback_boost'] = 'disliked_artist'
 
                 final_score *= feedback_multiplier
+
+                # Phase 1B: Audio feature preference boosting
+                if has_audio_preferences and features:
+                    audio_boost, audio_reason = audio_analytics.calculate_audio_feature_boost(features, mood=mood)
+                    final_score *= audio_boost
+
+                    # Track audio feature boost for debugging
+                    track['_audio_feature_boost'] = audio_reason
+                    if audio_reason in ['perfect_match', 'good_match']:
+                        # Mark tracks that got boosted
+                        if '_feedback_boost' not in track:
+                            track['_feedback_boost'] = f'audio_{audio_reason}'
+                        else:
+                            track['_feedback_boost'] += f'+audio_{audio_reason}'
 
                 track['_vibe_score'] = vibe_score
                 track['_recency_bonus'] = recency_bonus

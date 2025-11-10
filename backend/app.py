@@ -456,17 +456,19 @@ def get_more_songs():
             # INSTANT "load more" - just slice from cached songs!
             print(f"[LOAD MORE] Using cached songs (instant) - {len(all_songs)} available")
 
-            # Get how many songs have been returned so far
-            returned_count = len(session_data.get('songs', []))
+            # Get IDs of songs already returned
+            returned_song_ids = set(session_data.get('songs', []))
+            print(f"[LOAD MORE] Already returned {len(returned_song_ids)} songs")
 
-            # Calculate slice indices
-            start_idx = returned_count
-            end_idx = start_idx + 5
+            # Filter out songs that have already been returned (deduplicate)
+            available_songs = [song for song in all_songs if song['id'] not in returned_song_ids]
 
-            # Get next batch from cached songs
-            songs = all_songs[start_idx:end_idx]
+            print(f"[LOAD MORE] {len(available_songs)} new songs available after deduplication")
 
-            print(f"[LOAD MORE] Returning songs {start_idx+1}-{end_idx} from cache")
+            # Get next batch (5 songs)
+            songs = available_songs[:5]
+
+            print(f"[LOAD MORE] Returning {len(songs)} new songs from cache")
 
             # Track the new songs and update expiry
             if songs:
@@ -546,14 +548,24 @@ def submit_feedback():
         session_data = session_songs[session_id]
         analysis = session_data.get('analysis', {})
 
-        # Store feedback in database
+        # Extract audio features from cached songs (Phase 1B: Audio Feature Learning)
+        audio_features = None
+        all_songs = session_data.get('all_songs', [])
+        for song in all_songs:
+            if song.get('id') == song_id:
+                # Songs from spotify_service include _audio_features
+                audio_features = song.get('_audio_features')
+                break
+
+        # Store feedback in database with audio features
         feedback_id = feedback_store.add_feedback(
             session_id=session_id,
             song_id=song_id,
             song_name=song_name,
             artist_name=artist_name,
             feedback=feedback,
-            image_analysis=analysis
+            image_analysis=analysis,
+            audio_features=audio_features
         )
 
         print(f"[FEEDBACK] Session {session_id[:8]}: "
@@ -614,6 +626,15 @@ def submit_implicit_feedback():
         session_data = session_songs[session_id]
         analysis = session_data.get('analysis', {})
 
+        # Extract audio features from cached songs (Phase 1B: Audio Feature Learning)
+        audio_features = None
+        if song_id:  # Only for song-level signals (not session-level like load_more)
+            all_songs = session_data.get('all_songs', [])
+            for song in all_songs:
+                if song.get('id') == song_id:
+                    audio_features = song.get('_audio_features')
+                    break
+
         # Map signal types to feedback values
         signal_feedback_map = {
             'spotify_click': 1,      # Strong positive
@@ -624,7 +645,7 @@ def submit_implicit_feedback():
 
         feedback_value = signal_feedback_map.get(signal_type, 1)
 
-        # Store implicit feedback in database
+        # Store implicit feedback in database with audio features
         feedback_id = feedback_store.add_feedback(
             session_id=session_id,
             song_id=song_id,
@@ -633,7 +654,8 @@ def submit_implicit_feedback():
             feedback=feedback_value,
             image_analysis=analysis,
             signal_type=signal_type,
-            weight=weight
+            weight=weight,
+            audio_features=audio_features
         )
 
         signal_icons = {
