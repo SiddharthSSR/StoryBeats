@@ -156,14 +156,44 @@ class SpotifyService:
         ]
     }
 
+    PUNJABI_ARTISTS = {
+        'romantic': [
+            'Diljit Dosanjh', 'B Praak', 'Jaani', 'Akhil',
+            'Afsana Khan', 'Sunanda Sharma', 'Shreya Ghoshal',
+            'Jasleen Royal', 'Ammy Virk', 'Asees Kaur'
+        ],
+        'energetic': [
+            'Karan Aujla', 'AP Dhillon', 'Shubh', 'Badshah',
+            'Ikka', 'Arjan Dhillon', 'Gurinder Gill',
+            'Parmish Verma', 'Deep Kalsi', 'MC Square'
+        ],
+        'happy': [
+            'Diljit Dosanjh', 'Guru Randhawa', 'Harrdy Sandhu',
+            'Amaal Mallik', 'Manni Sandhu', 'Parmish Verma',
+            'Jass Manak', 'Navaan Sandhu', 'Jordan Sandhu', 'Ranjit Bawa'
+        ],
+        'moody': [
+            'AP Dhillon', 'Shubh', 'Karan Aujla',
+            'Talwiinder', 'The PropheC', 'Ezu',
+            'Ikka', 'Riar Saab', 'Wazir Patar', 'NseeB'
+        ],
+        'fresh_radar': [
+            'Param (Paramjeet Kaur)', 'Thiarajxtt', 'Riar Saab',
+            'Talwiinder', 'Wazir Patar', 'Himmat Sandhu',
+            'G. Sidhu', 'Harnoor', 'Arjan Dhillon', 'Thugzy'
+        ]
+    }
+
     HINDI_ARTISTS = {
         'romantic': list(dict.fromkeys(
             HINDI_BOLLYWOOD.get('romantic', []) +
-            HINDI_INDIE.get('romantic', [])
+            HINDI_INDIE.get('romantic', []) +
+            PUNJABI_ARTISTS.get('romantic', [])
         )),
         'energetic': list(dict.fromkeys(
             HINDI_BOLLYWOOD.get('energetic', []) +
-            HINDI_INDIE.get('energetic', [])
+            HINDI_INDIE.get('energetic', []) +
+            PUNJABI_ARTISTS.get('energetic', [])
         )),
         'peaceful': list(dict.fromkeys(
             HINDI_BOLLYWOOD.get('peaceful', []) +
@@ -174,8 +204,7 @@ class SpotifyService:
             HINDI_INDIE.get('melancholic', [])
         )),
         'happy': list(dict.fromkeys(
-            HINDI_BOLLYWOOD.get('energetic', []) +
-            HINDI_INDIE.get('peaceful', [])
+            PUNJABI_ARTISTS.get('happy', [])
         )),
         'confident': list(dict.fromkeys(
             HINDI_BOLLYWOOD.get('energetic', []) +
@@ -188,11 +217,12 @@ class SpotifyService:
             HINDI_INDIE.get('dreamy', [])
         )),
         'moody': list(dict.fromkeys(
-            HINDI_BOLLYWOOD.get('melancholic', []) +
-            HINDI_INDIE.get('moody', [])
+            HINDI_INDIE.get('moody', []) +
+            PUNJABI_ARTISTS.get('moody', [])
         )),
         'fresh_radar': list(dict.fromkeys(
-            HINDI_INDIE.get('fresh_radar', [])
+            HINDI_INDIE.get('fresh_radar', []) +
+            PUNJABI_ARTISTS.get('fresh_radar', [])
         ))
     }
 
